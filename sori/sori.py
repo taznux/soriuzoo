@@ -74,18 +74,6 @@ def save_config(config_file, username, password, port=9001):
 	config = general % (username, password, port)
 	open(config_file, 'w').write(config)
 
-def status_edit(status_file, pid, item=None):
-	if os.access(status_file, os.F_OK):
-		status = load(open(status_file, 'r'))
-	else: status = {}
-	if item:
-		status[pid] = item
-		dump(status, open(status_file, 'w'))
-	else:
-		del status[pid]
-	if status: dump(status, open(status_file, 'w'))
-	else: os.remove(status_file)
-
 def bada_unpack(asrbuf):
 	bada = StringIO(asrbuf)
 	if asrbuf.startswith('Version'):
@@ -225,6 +213,18 @@ def showsong(no, item):
 	print "Fullpath: %s" % item[2]
 	print ""
 
+def update_status(status_file, pid, item=None):
+	if os.access(status_file, os.F_OK):
+		status = load(open(status_file, 'r'))
+	else: status = {}
+	if item:
+		status[pid] = item
+		dump(status, open(status_file, 'w'))
+	else:
+		del status[pid]
+	if status: dump(status, open(status_file, 'w'))
+	else: os.remove(status_file)
+
 def download(username, item, sliderctrl=ConsoleSlider):
 	file = dospath.split(item[2])[1]
 	file = re.compile('[ _][ _]*').sub('_', file)
@@ -246,7 +246,7 @@ def download(username, item, sliderctrl=ConsoleSlider):
 	length = int(fsize.findall(rcv[0])[0])
 
 	if int(header[2]) == 0 and len(rcv) > 1:
-		status_edit(status_file, os.getpid(), (int(time.time()), length, localfile))
+		update_status(status_file, os.getpid(), (int(time.time()), length, localfile))
 		f = open(localfile, "w")
 		f.write(rcv[1])
 		if sliderctrl: sliderctrl = sliderctrl(length, 0)
@@ -258,7 +258,7 @@ def download(username, item, sliderctrl=ConsoleSlider):
 			f.write(buff)
 			if sliderctrl: sliderctrl.update(read)
 		f.close()
-		status_edit(status_file, os.getpid())
+		update_status(status_file, os.getpid())
 		if sliderctrl:
 			sliderctrl.end()
 			print ('Download completed: %s' % file)
@@ -267,6 +267,26 @@ def download(username, item, sliderctrl=ConsoleSlider):
 	else:
 		print ('Unknown Error: %d/%s' % (int(header[2]), ' '.join(header[3:])))
 
+def show_status(status_file):
+	if os.access(status_file, os.F_OK): status = load(open(status_file, 'r'))
+	else: status = {}
+	print ' PID  TimeLeft  Speed  Percent  File'
+	print '=' * 70
+	for pid in status.keys():
+		time_elaps = int(time.time()) - status[pid][0]
+		totalsize = status[pid][1]
+		localfile = status[pid][2]
+		if os.access(localfile, os.F_OK):
+			downsize = int(os.stat(localfile)[6])
+			time_remain = ((totalsize - downsize) / downsize) * time_elaps
+			percent = downsize * 100 / totalsize
+			if time_elaps: speed = (downsize / time_elaps) / 1024
+			else: speed = 0
+			print ('%6d %6d %4dKB/s %3d%% %s' % (pid, time_remain, speed, percent, localfile))
+		else:
+			update_status(status_file, pid)
+	print '=' * 70
+	
 
 if __name__ == '__main__':
 	if len(sys.argv) > 1: command = sys.argv[1]
@@ -363,11 +383,17 @@ if __name__ == '__main__':
 						else: showsong(no, songs[no])
 					else: print "%s: Out of range." % (no + 1)
 				except KeyboardInterrupt:
-					status_edit(status_file, os.getpid())
+					update_status(status_file, os.getpid())
 					print "\nUser interrupt."
 				except socket.error, why: print why[1]
 				except ValueError: print "Wrong NUMBER."
 		else: print "You need to sepecify NUMBER."
+	
+	elif command == 'status':
+		try:
+			show_status(status_file)
+		except IOError: pass
+		except KeyboardInterrupt: print "User interrupt."
 
 	else:
 		print """SORI 0.1 - Shell ORiented Interface for Uzoo
@@ -376,6 +402,7 @@ Usage: sori config
        sori {find|search} pattern
        sori list
        sori {show|get|bgget} number1 [number2 ...]
+	   sori status
 
 sori is a simple command line interface for searching and
 downloading mp3s from soribada community.
@@ -388,4 +415,5 @@ Commands:
    list   - List again search results.
    show   - Show information of selected song(s).
    get    - Download selected song(s).
-   bgget  - Download song(s) on a background process."""
+   bgget  - Download song(s) on a background process.
+   status - Show current download status."""
