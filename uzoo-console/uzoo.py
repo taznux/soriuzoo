@@ -37,6 +37,7 @@ import socket, time, dospath
 from errno import *
 
 SORIBADA_VERSION = '1.94'
+UZOO_RELEASE = '1.0-cvs'
 
 class UzooError(Exception):
 	def __init__(self, msg):
@@ -276,10 +277,10 @@ def parse_rc():
 if __name__ == '__main__':
 	import getpass
 
-	print "Perky's Uzoo Client Demo $Revision$"
-	print "==============================================================="
-	print " ** This script was released under BSD License."
-	print "    Please refer license declaration from source code."
+	print "Uzoo Client for console / Release %s [Rev. %s]" % (
+					UZOO_RELEASE, "$Revision$".split()[1] )
+	print "================================================================="
+	print "* Please visit http://sf.net/projects/soriuzoo for informations."
 	print
 
 	print "If you want to register new ID, just type 'new' in ID."
