@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<!--
+  - This program was developed with Java. 
+  - soribada control library (uzoo)
+  - 
+  - @author         Jangho Hwang,   rath@xrath.com
+  - @special-thank  Hye-Shik Chang, perky@fallin.lv
+  -->
+<project name="Soribada library(Uzoo)" default="build" basedir=".">
+
+	<property name="src" value="src"/>
+	<property name="doc" value="docs"/>
+	<property name="build" value="classes"/>
+	<property name="Jar" value="uzoo.jar"/>
+
+	<target name="compile">
+		<mkdir dir="${build}"/>
+		<javac srcdir="${src}"
+			destdir="${build}"
+			debug="yes"/>
+	</target>
+
+	<target name="build" depends="compile">
+		<delete file="${Jar}"/>
+		<jar jarfile="${Jar}"
+			basedir="${build}"
+			compress="yes"/>	
+	</target>
+
+	<target name="doc">
+		<mkdir dir="${doc}"/>
+		<javadoc sourcepath="${src}"
+			destdir="${doc}"
+			packagenames="uzoo.*,rath.util.*"
+			link="http://java.sun.com/j2se/1.4/docs/api"
+			windowtitle="Uzoo API Document"
+			doctitle="Uzoo API Document"
+			splitindex="yes"/>
+	</target>
+
+	<target name="clean">
+		<delete dir="${build}"/>
+		<delete file="${Jar}"/>
+	</target>
+
+</project>
