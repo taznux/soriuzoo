@@ -243,7 +243,8 @@ def download(username, item, sliderctrl=ConsoleSlider):
 	rcv = buff.split('\r\n\r\n', 1)
 	fsize = re.compile("Filesize: ([0-9]+)")
 	header = rcv[0].split()
-	length = int(fsize.findall(rcv[0])[0])
+	try: length = int(fsize.findall(rcv[0])[0])
+	except: print ('Unknown Error: %s' % rcv)
 
 	if int(header[2]) == 0 and len(rcv) > 1:
 		update_status(status_file, os.getpid(), (int(time.time()), length, localfile))
@@ -278,11 +279,17 @@ def show_status(status_file):
 		localfile = status[pid][2]
 		if os.access(localfile, os.F_OK):
 			downsize = int(os.stat(localfile)[6])
-			time_remain = ((totalsize - downsize) / downsize) * time_elaps
-			percent = downsize * 100 / totalsize
-			if time_elaps: speed = (downsize / time_elaps) / 1024
+			if downsize:
+				time_remain = ((totalsize - downsize) / downsize) * time_elaps
+			else: time_remain = 0
+			if time_elaps:
+				speed = (downsize / time_elaps) / 1024
 			else: speed = 0
-			print ('%6d %6d %4dKB/s %3d%% %s' % (pid, time_remain, speed, percent, localfile))
+			if totalsize:
+				percent = downsize * 100 / totalsize
+			else: percent = 0
+			print ('%6d %6ds %4dK/s %3d%% %s' %
+				(pid, time_remain, speed, percent, os.path.basename(localfile)))
 		else:
 			update_status(status_file, pid)
 	print '=' * 70
@@ -395,14 +402,22 @@ if __name__ == '__main__':
 		except IOError: pass
 		except KeyboardInterrupt: print "User interrupt."
 
+	elif command == 'kill':
+		if len(sys.argv) > 2:
+			for pid in sys.argv[2:]:
+				os.system('kill %s' % pid)
+				try: update_status(status_file, int(pid))
+				except KeyError: print ('%s: No such PID.' % pid)
+			
 	else:
 		print """SORI 0.1 - Shell ORiented Interface for Uzoo
 Usage: sori config
        sori update
-       sori {find|search} pattern
+       sori {find|search} PATTERN
        sori list
-       sori {show|get|bgget} number1 [number2 ...]
+       sori {show|get|bgget} NUMBER1 [NUMBER2 ...]
 	   sori status
+	   sori kill PID1 [PID2 ...]
 
 sori is a simple command line interface for searching and
 downloading mp3s from soribada community.
