@@ -164,19 +164,6 @@ if __name__ == '__main__':
                 continue
 			
 			try:
-				os.stat(dest.filename)
-			except:
-				pass
-			else:
-				print "=> Already download"
-			try:
-				fsize_past=os.stat(dest.filename+".SORI")[6]
-			except:
-				pass
-			else:
-				print "=> Resuming download"
-
-			try:
                 print "=> Downloading.... " + dest.filename
 				dest.download(fsize_past, sliderctrl=ConsoleSlider)
 			except UzooError, why:
