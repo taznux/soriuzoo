@@ -30,7 +30,7 @@
 # SUCH DAMAGE.
 #
 
-import time
+import time, os
 UZOO_RELEASE = '1.2'
 
 class ConsoleSlider:
@@ -71,6 +71,7 @@ class ConsoleSlider:
 	def end (self):
 		print
 
+
 def parse_rc():
 	import os
 	dotrc = os.environ.get('HOME', '.') + '/.uzoorc'
@@ -82,6 +83,23 @@ def parse_rc():
 				print '=> Hehe;) just kidding.'
 		except:
 			pass
+
+Player = None
+
+class Winamp:
+	name = 'winamp'
+	exepath = r'C:\Program Files\Winamp\winamp.exe'
+	def enqueue(self, path):
+		os.spawnv(os.P_NOWAIT, self.exepath, ["/ADD "+path])
+	def play(self, path):
+		os.spawnv(os.P_NOWAIT, self.exepath, [path])
+
+try:
+	if os.name in ['nt', 'dos']:
+		if os.access(Winamp.exepath, os.F_OK):
+			Player=Winamp
+except:
+	pass
 
 if __name__ == '__main__':
 	import getpass, os
@@ -176,12 +194,12 @@ if __name__ == '__main__':
 				except UzooError, why:
 					if why.errno == uzoolib.UZ_WOULDRESUME:
 						ans = raw_input('Resume Download Process ? ')
-						if ans[0].lower() == 'y':
+						if ans and ans[0].lower() == 'y':
 							resume = 1
 							continue
 					elif why.errno == uzoolib.UZ_FILEEXIST:
 						ans = raw_input('Overwrite the file ? ')
-						if ans[0].lower() == 'y':
+						if ans and ans[0].lower() == 'y':
 							overwrite = 1
 							continue
 					else:
@@ -192,7 +210,7 @@ if __name__ == '__main__':
 					print "\n=> User Interrupt"
 					try:
 						ans = raw_input("Remove not completed file ? ")
-						if ans[0].lower() == 'y':
+						if ans and ans[0].lower() == 'y':
 							os.remove(dest._filepath(1))
 					except IndexError:
 						pass
@@ -200,6 +218,12 @@ if __name__ == '__main__':
 						pass
 				else:
 					print "=> Download Complete!"
-
+					if Player:
+						ans = raw_input("Do you want to play it with %s? "
+								"('y' to play, 'e' to enqueue it) " % Player.name)
+						if ans and ans[0].lower() == 'y':
+							Player().play(dest._filepath(0))
+						elif ans and ans[0].lower() == 'e':
+							Player().enqueue(dest._filepath(0))
 				break
 
