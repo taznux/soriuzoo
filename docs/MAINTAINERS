@@ -4,20 +4,51 @@
 $Id$
 ----
 
-uzoo-console:
+==============================================================
+uzoo-console
+ 콘솔, curses, 쉘(CVS형식) 인터페이스 구현및 프론트엔드
+ (Python기반)
+
   taznux@users.sourceforge.net (Wook-jin Choi)
   ruyon@users.sourceforge.net (Ru Yon)
 
-uzoo-qt:
+==============================================================
+uzoo-qt
+ Qt/C++ 또는 KDE 기반 인터페이스 (프로토콜 구현 포함)
+
   sonegy@users.sourceforge.net (Lee, jaeil)
   ryu2811@users.sourceforge.net (Ryu Myeong Hwan)
 
-uzoo-tkinter:
+==============================================================
+uzoo-tkinter
+ tkinter/Python 기반의 인터페이스
   exman@users.sourceforge.net (Park joon cheol)
 
-uzoo-aqua:
+==============================================================
+uzoo-aqua
+ Cocoa또는 Carbon 기반의 인터페이스 구현
+
   perky@fallin.lv (Hye-Shik Chang)
   - imation님 포섭중 :)
+
+==============================================================
+uzoo-python
+ Python 프로토콜 라이브러리
+
+  perky@fallin.lv (Hye-Shik Chang)
+
+==============================================================
+uzoo-java
+ Java 프로토콜 라이브러리
+  
+  xrath@users.sourceforge.net (Jang-ho Hwang)
+
+==============================================================
+uzoo-swing
+ Swing 기반 인터페이스 (for java 1.4)
+  
+  xrath@users.sourceforge.net (Jang-ho Hwang)
+
 
 
 project manager : perky
