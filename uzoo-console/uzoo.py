@@ -5,7 +5,7 @@
 #
 # $Id$
 #
-# Copyright (c) 2002 Hye-Shik Chang <perky@fallin.lv>. Seoul.
+# Copyright (c) 2002 Uzoo Project, SourceForge.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
