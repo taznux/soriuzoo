@@ -44,28 +44,34 @@ class UzooError(Exception):
 		Exception.__init__(self, msg)
 
 
-def bada_unpack(bada):
-	bada = StringIO(bada)
+def bada_unpack(asrbuf):
+	bada = StringIO(asrbuf)
+	if asrbuf.startswith('Version'):
+		bada.readline()
 	fishes = []
 	
 	while 1:
 		pkt = map(ord, list(bada.read(6)))
-		if len(pkt) < 4:
+		if len(pkt) < 6:
 			break
 
 		magicnum = [0x00, 0xa5, 0xc3, 0x77][(pkt[1] & 0x0c) >> 2]
 		nonmagics = [pkt[1]>>i & 1 for i in (7,6,5,4)]
 		ip = [pkt[2+i] ^ (not (pkt[1]>>(4+i) & 1) and magicnum or 0)
 					for i in range(4)]
-		ip = '%d.%d.%d.%d' % (ip[1], ip[3], ip[3], ip[0])
+		ip = '%d.%d.%d.%d' % (ip[1], ip[3], ip[2], ip[0])
 		fishes.append((ip, pkt[0] + ((pkt[1] & 3) << 8) + 9000))
 	
 	return fishes
 
 def bada_pack(addr):
 	ip, port = addr
-	sip = [chr(unpack[4](int(n))) for n in ip.split('.')]
-	return chr(port-9000) + '\x04' + sip[3] + sip[0] + sip[2] + sip[1]
+	sip = [chr(int(n) ^ 0xa5) for n in ip.split('.')]
+	port1, port2 = (port-9000)%256, int((port-9000)/256)
+	if port2 > 3:
+		raise ValueError, "Port out of range"
+	r = chr(port1) + chr(port2 | 0x04) + sip[3] + sip[0] + sip[2] + sip[1]
+	return r
 
 
 class QueryFactory:
@@ -200,7 +206,6 @@ class Uzoo:
 	def update_bada (self):
 		bada = urllib.urlopen('%s?action=gimme&username=%s&password=%s' % (
 				self.badaurl, self.username, self.password) ).read()
-		open("asr","w").write(bada)
 		self.bada = bada_unpack(bada)
 	
 	def do_query (self, keywords, listenlimit=5.0):
@@ -243,3 +248,6 @@ def register(username, password, gender=0, speed=1, age=15, email="sori@bada.com
 	if res.split()[3] != '000':
 		raise UzooError, res.split(' ', 3)[-1]
 
+
+for i in bada_unpack(open("asr").read()):
+	print i
