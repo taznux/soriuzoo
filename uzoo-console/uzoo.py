@@ -31,7 +31,7 @@
 #
 
 import time, os, re
-UZOO_RELEASE = '1.2'
+UZOO_RELEASE = '1.1.3'
 
 
 def dotint(v):
@@ -68,7 +68,7 @@ class ConsoleSlider:
 	
 	def update (self, value, *ext):
 		newfill = int( float(value+self.initpos) * self.barsize / self.max )
-		if newfill != self.barfill:
+		if 1: # newfill != self.barfill:
 			self.barfill = newfill
 			sys.stdout.write(self.barfmt % 
 				( str(int(newfill * 100 / self.barsize))+'%',
@@ -186,10 +186,11 @@ if __name__ == '__main__':
 			results = s.do_query(keywords.split(), 10, sliderctrl=ConsoleSlider)
 		except KeyboardInterrupt:
 			print "\n=> Stopped Searching."
-
-		if not results:
-			print "=> No such song ;)"
-			continue
+            continue
+        else:
+		    if not results:
+		    	print "=> No such song ;)"
+		    	continue
 
 		print "=> Search Result"
 		print "No.   Size   Length Bitrate  Filename"

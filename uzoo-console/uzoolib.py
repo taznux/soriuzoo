@@ -32,17 +32,18 @@
 
 import urllib, re, sys, os
 from cStringIO import StringIO
-import struct, select
+import struct, select, warnings
 import socket, time, dospath
 from errno import *
 
 SORIBADA_VERSION = '1.94'
+SORIBADA_ENCODING = 'korean.cp949'
 
 (
 UZ_CONNREFUSED, UZ_CONNRESET, UZ_NOGATEWAY, UZ_USERLIMIT,
 UZ_UNKNOWN, UZ_LOGINERR, UZ_REGISTERERR, UZ_FILEEXIST,
-UZ_WOULDRESUME, UZ_BINDERR
-) = range(10)
+UZ_WOULDRESUME, UZ_BINDERR, UZ_FILEOPEN
+) = range(11)
 
 class UzooError(Exception):
 	def __init__(self, errno, msg):
@@ -50,6 +51,14 @@ class UzooError(Exception):
 		self.msg = msg
 		Exception.__init__(self, msg)
 
+fs_encoding = ''
+if sys.platform == 'darwin':
+    try:
+        unicode('test', 'korean.unijohab')
+        fs_encoding = 'korean.unijohab'
+    except:
+        warnings.warn('You must install KoreanCodecs 2.0 from http://'
+                      'sourceforge.net/projects/koco in order to download Hangul name')
 
 def bada_unpack(asrbuf):
 	bada = StringIO(asrbuf)
@@ -135,7 +144,11 @@ class MP3Location:
 			raise ValueError, "Wrong Packet Found :: <<<" + repr(data) + ">>>"
 
 	def _filepath (self, inprocess=0):
-		return os.path.join(self.downdir, self.filename + (inprocess and self.dl_sufx or ''))
+		fp = os.path.join(self.downdir, self.filename + (inprocess and self.dl_sufx or ''))
+        if fs_encoding:
+            fp = unicode(fp, SORIBADA_ENCODING).encode(fs_encoding)
+            # can raise UnicodeError from here
+        return fp
 
 	def download (self, sliderctrl=None, allow_resume=0, allow_overwrite=0):
 		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -166,7 +179,10 @@ PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, position, self.username) )
 
 		header = rcv[0].split()
 		if int(header[2]) == 0 and len(rcv) > 1:
-			f = open(self._filepath(1), position and 'ab' or 'wb')
+            try:
+			    f = open(self._filepath(1), position and 'ab' or 'wb')
+            except:
+                raise UzooError(UZ_FILEOPEN, "Can't open file")
 			f.write(rcv[1])
 
 			length = int(self.fsize.findall(rcv[0])[0])
