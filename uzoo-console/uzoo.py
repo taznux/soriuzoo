@@ -132,7 +132,14 @@ class MP3Location:
 
 	def download (self, dir='.', sliderctrl=None):
 		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		sock.connect((self.addr[0], int(self.downport)))
+		try:
+			sock.connect((self.addr[0], int(self.downport)))
+		except socket.error, why:
+			if why[0] == ECONNREFUSED:
+				raise UzooError, "Connection Refused"
+			else:
+				raise socket.error, why
+
 		sock.send("GETMP3\r\nFilename: %s\r\nPosition: 0\r\n\
 PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, self.username) )
 		buff = ''
@@ -150,14 +157,20 @@ PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, self.username) )
 				sliderctrl = sliderctrl(length)
 
 			read = len(rcv[1])
-			while read < length:
-				buff = sock.recv(32768)
-				if not buff:
-					break
-				read += len(buff)
-				f.write(buff)
-				if sliderctrl:
-					sliderctrl.update(read)
+			try:
+				while read < length:
+					buff = sock.recv(32768)
+					if not buff:
+						break
+					read += len(buff)
+					f.write(buff)
+					if sliderctrl:
+						sliderctrl.update(read)
+			except socket.error, why:
+				if why[0] == ECONNRESET:
+					raise UzooError, "Connection reset by peer."
+				else:
+					raise socket.error, why
 
 			f.close()
 			if sliderctrl:
@@ -172,7 +185,14 @@ class ConsoleSlider:
 	def __init__ (self, max):
 		self.barfill = -1
 		self.max = max
-		self.barsize = 60 # fcntl?
+		try:
+			import fcntl, termios
+			s = struct.pack("HHHH", 0, 0, 0, 0)
+			self.cols = struct.unpack("HHHH", fcntl.ioctl(sys.stdout.fileno(),
+								termios.TIOCGWINSZ, s))[1]
+		except:
+			self.cols = 78
+		self.barsize = self.cols - 30
 		self.st = time.time()
 		self.update(0)
 	
@@ -180,9 +200,14 @@ class ConsoleSlider:
 		newfill = int( float(value) * self.barsize / self.max )
 		if newfill != self.barfill:
 			self.barfill = newfill
-			sys.stdout.write('\r[%s%s] %3d%% %d kB/s' % ('='*newfill,
+			elapsed = time.time()-self.st
+			sys.stdout.write('\r[%s%s] %3d%%  %d kB/s' % ('='*newfill,
 			    ' '*(self.barsize-newfill), newfill * 100 / self.barsize,
-				value/(time.time()-self.st)/1024 ) )
+				value / elapsed / 1024 ) )
+			if newfill * 20 >= self.barsize: # over 5%
+				estimated = int((float(self.barsize) - newfill) / newfill * elapsed)
+				sys.stdout.write('  %d:%02d left ' % 
+						( int(estimated/60), int(estimated%60) ) ) # int is for py3k
 			sys.stdout.flush()
 	
 	def end (self):
@@ -275,7 +300,7 @@ def parse_rc():
 			pass
 
 if __name__ == '__main__':
-	import getpass
+	import getpass, os
 
 	print "Uzoo Client for console / Release %s [Rev. %s]" % (
 					UZOO_RELEASE, "$Revision$".split()[1] )
@@ -343,16 +368,30 @@ if __name__ == '__main__':
 		print "=> %d song(s) found." % len(results)
 
 		while 1:
-			n = raw_input("Download which? ('q' for quit) >>> ")
-			if n[0] == 'q':
+			ans = raw_input("Download which? ('q' for quit) >>> ")
+			if ans and ans[0] == 'q':
 				break
-			print "=> Downloading.... "+results[int(n)].filename
+
 			try:
-				results[int(n)].download(sliderctrl=ConsoleSlider)
+				dest = results[int(ans)]
+				print "=> Downloading.... " + dest.filename
+			except ValueError:
+				continue
+			except IndexError:
+				print "=> Please select one of listed above."
+				continue
+
+			try:
+				dest.download(sliderctrl=ConsoleSlider)
 			except UzooError, why:
 				print "=> Downloading Error:", why
+			except socket.error, why:
+				print "=> Connection Error on Downloading:", repr(why)
 			except KeyboardInterrupt:
 				print "\n=> User Interrupt"
+				ans = raw_input("Remove not completed file ? ")
+				if ans[0].lower() == 'y':
+					os.remove(dest.filename)
 			else:
 				print "=> Download Complete!"
 				parse_rc() # XXX: temporary for a while ;)
