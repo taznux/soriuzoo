@@ -37,7 +37,7 @@ import socket, time, dospath
 from errno import *
 
 SORIBADA_VERSION = '1.94'
-UZOO_RELEASE = '1.0-cvs'
+UZOO_RELEASE = '1.1'
 
 class UzooError(Exception):
 	def __init__(self, msg):
