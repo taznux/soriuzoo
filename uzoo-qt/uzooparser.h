@@ -1,6 +1,8 @@
 #ifndef UZOOPARSER_H
 #define UZOOPARSER_H
 
+#include "uzooconfigimpl.h"
+
 #include <qobject.h>
 #include <qarray.h>
 #include <qvaluelist.h>
@@ -8,7 +10,6 @@
 #include <qhostaddress.h>
 #include <qsocketdevice.h>
 #include <qtimer.h>
-
 /* ASR주소에서 받아진 데이타를 정리해서 담는 자료현 */
 typedef struct asrarray
 {
@@ -40,12 +41,15 @@ class UzooParser : public QObject
 	// 물론 lookUptable을 만든다.
 	Q_OBJECT
 	public:
-		UzooParser(	const QString &asrurl,
-					const QString &myip ,
-					const QString &searchstring);
+		UzooParser( QObject *parent=0 , const char *name=0);
 		~UzooParser();
-		int getClientsInfoSize() { return clientsInfo->size(); }
-		void searchStop() { timer->stop(); }
+		int getClientsInfoSize()	{ return clientsInfo->size(); }
+		void searchStop() 			{ timer->stop(); }
+		
+		void startParser(const QString &asrurl,const QString &myip, 
+				const QString &searchstring);
+		void setMyPort(short port)	{ myPort = port ;}
+		void setRecvMaxNum(int num)	{ recvMaxNum = num;}
 	protected:
 		void initAsrUrl(const QString &asrurl);
 		void initMyIP(const QString &myip); /* 카운터와 search를 제외한 부분*/
@@ -70,29 +74,28 @@ class UzooParser : public QObject
 			/* 알아서 하나씩 메세지를 날려준다
 			타이머 이벤트에 연결되어 실행한다.물론 실행할때마다. clientsInfo의 
 			위치를 인식해서 다음을 실행한다. */
-		void slotRecvMessageFromClients();	/* clientsMessage에 차곡차곡 쌓는다.*/
-
+		void slotRecvMessageFromClients();/*clientsMessage에 차곡차곡 쌓는다.*/
 	private:
-		QArray<AsrArray> 	*clientsInfo;	
-			/* 클라이언트 정보를 변환저장, 7500개의 배열 */
-		int					clientsInfoIndex ;
-		//QValueList<RecvMessage> *clientsMessage;  /* 클라이언트가 보내준 정보*/
-		QTimer				*timer;				  /* send대기시간. */
-		QSocketDevice		*socketDevice;
-		int					sockfd;
-		uchar 				lookUpTable[255];	  /* 인코딩을 위한 테이블	*/
-		SendMessage			message;			  /* 각각의 클라이언트들에게
-												   * 보낼 데이타	        */
-		int					sendCounter;
-		int					recvCounter;
-		int					recvMaxNum;
+		QArray<AsrArray> *clientsInfo; /* 클라이언트 정보를 변환저장, */
+		int				clientsInfoIndex ;
+		QTimer			*timer;				  /* send대기시간. */
+		QSocketDevice	*socketDevice;
+		int				sockfd;
+		uchar 			lookUpTable[256];	  /* 인코딩을 위한 테이블	*/
+		SendMessage		message;			  /* 각각의 클라이언트들에게
+											   * 보낼 데이타	        */
+		int	sendCounter;
+		int	recvCounter;
+		int	recvMaxNum;
+		short myPort;
 	signals:
 		void startAsrParser();
 		void endAsrParser();
 		void startSendUDPClients();
 		void endSendUDPClients();
-		void nowSendUDPClients(int);
-		void nowRecvUDPClients(int);
+		void nowRecvSendUDPClients(int , int);
 		void sendClientMessage(RecvMessage&);
+		void sendMessage(const QString&);
+		void sendMessage(const QString&,int);
 };
 #endif//UZOOPARSER_H

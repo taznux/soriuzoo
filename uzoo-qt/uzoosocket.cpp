@@ -1,11 +1,14 @@
 #include "uzoosocket.h"
+
 #include <iostream.h>
 #include <qcstring.h>
 #include <qtimer.h>
+#include <qdir.h>
+#include <qhostaddress.h>
 
 #define kor(x) QString::fromLocal8Bit(x)
-UzooSocket::UzooSocket(const QString &path , const QString &id ,
-	QObject *parent ,const char*name) : QSocket(parent,name)
+UzooSocket::UzooSocket(QObject *parent ,const char*name, ResultSearch &rs,
+	int listIndex , const QString &myid ) : QSocket(parent,name)
 {
 	connect(this,SIGNAL(connected()),this,SLOT(slotSend()));
 	connect(this,SIGNAL(readyRead()),this,SLOT(slotRecvData()));
@@ -13,47 +16,49 @@ UzooSocket::UzooSocket(const QString &path , const QString &id ,
 	connect(this,SIGNAL(delayedCloseFinished()),
 			this,SLOT(slotDelayedCloseFinished()));
 	connect(this,SIGNAL(error(int)),this,SLOT(slotError(int)));
-
-	this->path = path;
-	this->id = id;
-	nowSize = 0;
-	int index= path.findRev("\\");
-	int len = path.length();
-	canIdownload = false;
-	downloadfile.setName(kor((path.right(len- index -1)) ));
-	mp3data.setDevice( &downloadfile);
 	
+	setListIndex(listIndex); // 나중에 보낼 리스트인덱스 번호
+	this->rs = rs;	// 주소,포트,아이디,패스,파일사이즈를 쓴다
+	this->myid = myid;
+	nowSize = 0;	// 현재 다운로드된 사이즈
+	canIdownload = false;
+	setDownLoadPath(".");
+
+	// 연결한다.
+	this->connectToHost( rs.address , rs.port );
 }
 UzooSocket::~UzooSocket()
 {
 	close();
-	//cout << "Destroctor!!\n";
-}
-void
-UzooSocket::connectTo(QString &address, int port)
-{
-	connectToHost( address, port );
-}
-void
-UzooSocket::setTotalFileSize(long totalsize)
-{
-	totalFileSize = totalsize;
 }
 void
 UzooSocket::setListIndex(int index)
 {
 	listIndex = index;
 }
+void	// 이건 생성자에 포함시키지 않는다.
+UzooSocket::setDownLoadPath(const QString &str_)
+{
+	QString str = str_;
+	if(QFile(str).exists() != true)
+	{
+		// 경로가 존재하지 않으면 자신의 계정에 담는다.
+		str = QDir::homeDirPath();	
+	}
+	int index= rs.path.findRev("\\");
+	int len = rs.path.length();
+	downloadfile.setName(kor(str + "/" + rs.path.right(len- index -1)) );
+	mp3data.setDevice(&downloadfile);
+}
 void
 UzooSocket::slotSend()
 {
 	QString senddata;
 	senddata.append("GETMP3\r\nFilename: ");
-	senddata.append(path);
+	senddata.append(rs.path);
 	senddata.append("\r\nPosition: 0\r\nPortM: 9999\r\nUsername: ");
-	senddata.append(id);
+	senddata.append(myid);
 	senddata.append("\r\n\r\n");
-	//cout << "Final : " << senddata.latin1() << endl;
 	writeBlock( senddata.latin1() , senddata.length() );
 }
 void
@@ -62,20 +67,21 @@ UzooSocket::slotRecvData()
 	// 처음 스트링에 Succeded가 있으면 파일 존재 확인
 	int bytes = bytesAvailable();
 	char *string = new char[bytes];
-	//this->flush();
+	this->flush();
 
 	readBlock( string , bytes );
 	if ( canIdownload == false && QString(string).find("Succeded") >= 0)
 	{
 		if (downloadfile.exists() == true)
 		{
-			emit sendMessage("Exist File");
+			emit sendState(listIndex,9);
 			this->close();
 		}
 		canIdownload = true;	
 		canIdownload =  downloadfile.open(IO_WriteOnly | IO_Append); 
-
-		emit sendMessage("Start DownLoad");
+		
+		emit start(this);
+		emit sendState(listIndex , 1);
 
 		QTimer *timer = new QTimer(this);
 		connect(timer,SIGNAL(timeout()),this,SLOT(slotInspect()));
@@ -84,17 +90,17 @@ UzooSocket::slotRecvData()
 	}
 	else if(canIdownload == false && QString(string).find("User Limit"))
 	{
-		emit sendMessage("User Limit");
+		emit sendState(listIndex, 6);
 		this->close();
 	}
 	else if(canIdownload == false && QString(string).find("File Not Found"))
 	{
-		emit sendMessage("File Not Found");
+		emit sendState(listIndex, 7);
 		this->close();
 	}
 	else if(canIdownload == false && QString(string).find("Invalid Command"))
 	{
-		emit sendMessage("Invalid Command");
+		emit sendState(listIndex,8);
 		this->close();
 	}
 	if (canIdownload == true)
@@ -102,10 +108,12 @@ UzooSocket::slotRecvData()
 		mp3data.writeRawBytes( string , bytes );
 		nowSize = nowSize + bytes;
 		emit sendFileSize( listIndex , nowSize );
+		emit sendState(listIndex , 2);
 		canIdownload = true;
-		if ( nowSize >=  totalFileSize ) // 다 받았다면
+		if ( nowSize >=  rs.filesize ) // 다 받았다면
 		{
-			emit sendMessage("Finished download");
+			emit sendState(listIndex,3);
+			emit end(this);
 			// 소켓을 종료해야한다.
 			this->close();
 		}
@@ -114,18 +122,18 @@ UzooSocket::slotRecvData()
 void
 UzooSocket::slotConnectionClosed()
 {
-	emit sendMessage("ConnectionClosed");
+	emit sendState(listIndex, 10 );
 }
 void
 UzooSocket::slotDelayedCloseFinished()
 {
-	emit sendMessage("DelayedCloseFinished");
+	emit sendState(listIndex, 11);
 }
 void
 UzooSocket::slotError(int num)
 {	
 	num =0;
-	emit sendMessage("Socket Error");
+	emit sendState(listIndex , 5);
 }
 void
 UzooSocket::slotInspect()
