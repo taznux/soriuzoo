@@ -31,6 +31,7 @@
 #
 
 import time
+UZOO_RELEASE = '1.2'
 
 class ConsoleSlider:
 	def __init__ (self, max):
@@ -86,7 +87,7 @@ if __name__ == '__main__':
 	from uzoolib import UzooError
 
 	print "Uzoo Client for console / Release %s [Rev. %s]" % (
-					uzoolib.UZOO_RELEASE, "$Revision$".split()[1] )
+					UZOO_RELEASE, "$Revision$".split()[1] )
 	print "================================================================="
 	print "* Please visit http://sf.net/projects/soriuzoo for informations."
 	print

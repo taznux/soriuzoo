@@ -37,39 +37,28 @@ import socket, time, dospath
 from errno import *
 
 SORIBADA_VERSION = '1.94'
-UZOO_RELEASE = '1.1'
 
 class UzooError(Exception):
 	def __init__(self, msg):
 		self.msg = msg
 		Exception.__init__(self, msg)
 
-unpack = {
-	4: lambda x: (x ^ 1 + 164) % 256,
-	8: lambda x: (x ^ 3 + 192) % 256,
-	12: lambda x: (x ^ 7 + 112) % 256,
-}
 
 def bada_unpack(bada):
 	bada = StringIO(bada)
 	fishes = []
 	
 	while 1:
-		phead = bada.read(2)
-		while len(phead) < 2 or not unpack.has_key(ord(phead[1])):
-			while bada.read(1) not in ['\x01', '']:
-				pass
-			phead = '\x01' + bada.read(1)
-			if len(phead) < 2:
-				break
-		ip = bada.read(4)
-		if len(ip) < 4:
+		pkt = map(ord, list(bada.read(6)))
+		if len(pkt) < 4:
 			break
-		upack = unpack[ord(phead[1])]
-		fishes.append( (
-			'%d.%d.%d.%d' % tuple([upack(ord(ip[i])) for i in (1,3,2,0)]),
-			9000 + ord(phead[0])
-		) )
+
+		magicnum = [0x00, 0xa5, 0xc3, 0x77][(pkt[1] & 0x0c) >> 2]
+		nonmagics = [pkt[1]>>i & 1 for i in (7,6,5,4)]
+		ip = [pkt[2+i] ^ (not (pkt[1]>>(4+i) & 1) and magicnum or 0)
+					for i in range(4)]
+		ip = '%d.%d.%d.%d' % (ip[1], ip[3], ip[3], ip[0])
+		fishes.append((ip, pkt[0] + ((pkt[1] & 3) << 8) + 9000))
 	
 	return fishes
 
@@ -79,7 +68,7 @@ def bada_pack(addr):
 	return chr(port-9000) + '\x04' + sip[3] + sip[0] + sip[2] + sip[1]
 
 
-class QueryPacket:
+class QueryFactory:
 	
 	def __init__ (self, addr, keywords):
 		self.packet = '\x01%s%%s\x51\x3a%s' % (
@@ -211,10 +200,11 @@ class Uzoo:
 	def update_bada (self):
 		bada = urllib.urlopen('%s?action=gimme&username=%s&password=%s' % (
 				self.badaurl, self.username, self.password) ).read()
+		open("asr","w").write(bada)
 		self.bada = bada_unpack(bada)
 	
 	def do_query (self, keywords, listenlimit=5.0):
-		q = QueryPacket((self.ip, self.port), keywords)
+		q = QueryFactory((self.ip, self.port), keywords)
 		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		sock.setblocking(0)
 		sock.bind(('', self.port))
