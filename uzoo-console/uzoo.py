@@ -30,8 +30,17 @@
 # SUCH DAMAGE.
 #
 
-import time, os
+import time, os, re
 UZOO_RELEASE = '1.2'
+
+
+def dotint(v):
+	dotstr = str(v)
+	left = dotstr[:len(dotstr)%3]
+	right = re.findall('...', dotstr[len(dotstr)%3:])
+	if left:
+		right.insert(0, left)
+	return ','.join(right)
 
 class ConsoleSlider:
 	def __init__ (self, max, initpos, slidertype='down'): # 'down' or 'search'
@@ -47,7 +56,13 @@ class ConsoleSlider:
 								termios.TIOCGWINSZ, s))[1]
 		except:
 			self.cols = 78
-		self.barsize = self.cols - 30
+		self.barsize = self.cols - 12 # 4(percent) + 2([]) + 4(spaces) + 2(endmark)
+		self.barsize -= len(dotint(max)) # done value
+		self.barfmt = '\r%%-4s[%%s>%%s] %%-%ds ' % len(dotint(max))
+		if self.type == 'search':
+			self.barsize -= 14 # '(%d found) %s '
+		else:
+			self.barsize -= 22
 		self.st = time.time()
 		self.update(0)
 	
@@ -55,20 +70,21 @@ class ConsoleSlider:
 		newfill = int( float(value+self.initpos) * self.barsize / self.max )
 		if newfill != self.barfill:
 			self.barfill = newfill
-			sys.stdout.write('\r[%s%s] %d%%' % 
-				( '='*newfill,
+			sys.stdout.write(self.barfmt % 
+				( str(int(newfill * 100 / self.barsize))+'%',
+				  '='*(newfill - 1),
 			   	  ' '*(self.barsize-newfill),
-				  newfill * 100 / self.barsize ) )
+				  dotint(value) ) )
 
-			if self.type == 'down' and value * 20 >= self.sessmax: # over 5%
+			if self.type == 'down' and value * 30 >= self.sessmax: # over 3%
 				elapsed = time.time() - self.st
 				estimated = int(float(self.sessmax) / value * elapsed - elapsed)
-				sys.stdout.write('  %d kB/s  %d:%02d left ' % 
-					( value / elapsed / 1024,
+				sys.stdout.write("%7.2fK/s   ETA %02d:%02d" % 
+					( float(value) / elapsed / 1024,
 					  int(estimated/60),
 					  int(estimated%60) ) ) # int is for py3k
 			elif self.type == 'search' and ext:
-				sys.stdout.write(' (%d found) %s   ' % (ext[0], ext[1]))
+				sys.stdout.write('(%d found) %s ' % (ext[0], ext[1]))
 			sys.stdout.flush()
 	
 	def end (self):
@@ -166,7 +182,10 @@ if __name__ == '__main__':
 			continue
 
 		print "=> Searching...."
-		results = s.do_query(keywords.split(), 10, sliderctrl=ConsoleSlider)
+		try:
+			results = s.do_query(keywords.split(), 10, sliderctrl=ConsoleSlider)
+		except KeyboardInterrupt:
+			print "\n=> Stopped Searching."
 
 		if not results:
 			print "=> No such song ;)"
