@@ -209,7 +209,7 @@ def download(username, item, sliderctrl=ConsoleSlider):
 	file = re.compile('[_-]*[-\[\]\(\)\{\}][_-]*').sub('-', file)
 	file = re.compile('^[_-]*').sub('', file)
 	file = re.compile('[-_]*\.[mM][pP]3$').sub('.mp3', file)
-	print ("Starting to download: %s" % file)
+	if sliderctrl: print ('Starting to download: %s' % file)
 	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	sock.connect((item[0], item[1]))
 	sock.send("GETMP3\r\nFilename: %s\r\nPosition: 0\r\nPortM: 9999\r\nUsername: %s\r\n\r\n" % (item[2], username))
@@ -232,12 +232,13 @@ def download(username, item, sliderctrl=ConsoleSlider):
 			f.write(buff)
 			if sliderctrl: sliderctrl.update(read)
 		f.close()
-		if sliderctrl: sliderctrl.end()
-		print ("Download completed: %s" % file)
+		if sliderctrl:
+			sliderctrl.end()
+			print ('Download completed: %s' % file)
 	elif int(header[2]) == 100:
-		print 'User Limit Exceeded'
+		if sliderctrl: print ('User Limit Exceeded: %s' % file)
 	else:
-		print 'Unknown Error: %d/%s' % (int(header[2]), ' '.join(header[3:]))
+		if sliderctrl: print 'Unknown Error: %d/%s' % (int(header[2]), ' '.join(header[3:]))
 
 
 if __name__ == '__main__':
@@ -312,22 +313,22 @@ if __name__ == '__main__':
 			except KeyboardInterrupt: print "User interrupted."
 		else: print "You need to run `sori find PATTERN' first."
 
-	elif command in ['show', 'get', 'sget', 'bgget']:
+	elif command in ['show', 'get', 'bgget']:
 		if not os.access(songs_file, os.F_OK):
 			print "You need to run `sori find PATTERN' first."
 		elif len(sys.argv) > 2:
 			if command == 'bgget':
-				sys.argv[1] = 'sget'
-				os.system(string.join(sys.argv, ' ')+' & > /dev/null')
-				sys.exit()
+				pid = os.fork()
+				if pid:
+					print ('New pid is %s.' % pid)
+					os._exit(0)
 			songs = pickle.load(open(songs_file, 'r'))
 			for no in sys.argv[2:]:
 				try:
 					no = int(no) - 1
 					if -1 < no < len(songs):
 						if command == 'get': download(username, songs[no])
-						elif command == 'sget':
-							download(username, songs[no], None)
+						elif command == 'bgget': download(username, songs[no], None)
 						else: showsong(no, songs[no])
 					else: print "%s: Out of range." % (no + 1)
 				except KeyboardInterrupt: print "\nUser interrupted."
@@ -341,7 +342,7 @@ Usage: sori config
        sori update
        sori {find|search} pattern
        sori list
-       sori {show|get|sget} number1 [number2 ...]
+       sori {show|get|bgget} number1 [number2 ...]
 
 sori is a simple command line interface for searching and
 downloading mp3s from soribada community.
@@ -354,4 +355,4 @@ Commands:
    list   - List again search results.
    show   - Show information of selected song(s).
    get    - Download selected song(s).
-   sget   - Silently download song(s)."""
+   bgget  - Download song(s) on a background process."""
