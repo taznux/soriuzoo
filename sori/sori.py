@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-import sys, os, re, urllib, time, getpass
+import sys, os, re, urllib, time, getpass, string
 import struct, select, socket, dospath, pickle
 from cStringIO import StringIO
 from errno import *
@@ -209,7 +209,7 @@ def download(username, item, sliderctrl=ConsoleSlider):
 	file = re.compile('[_-]*[-\[\]\(\)\{\}][_-]*').sub('-', file)
 	file = re.compile('^[_-]*').sub('', file)
 	file = re.compile('[-_]*\.[mM][pP]3$').sub('.mp3', file)
-	print ("Downloading: %s" % file)
+	print ("Starting to download: %s" % file)
 	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	sock.connect((item[0], item[1]))
 	sock.send("GETMP3\r\nFilename: %s\r\nPosition: 0\r\nPortM: 9999\r\nUsername: %s\r\n\r\n" % (item[2], username))
@@ -233,6 +233,7 @@ def download(username, item, sliderctrl=ConsoleSlider):
 			if sliderctrl: sliderctrl.update(read)
 		f.close()
 		if sliderctrl: sliderctrl.end()
+		print ("Download completed: %s" % file)
 	elif int(header[2]) == 100:
 		print 'User Limit Exceeded'
 	else:
@@ -311,10 +312,14 @@ if __name__ == '__main__':
 			except KeyboardInterrupt: print "User interrupted."
 		else: print "You need to run `sori find PATTERN' first."
 
-	elif command in ['get', 'sget', 'show']:
+	elif command in ['show', 'get', 'sget', 'bgget']:
 		if not os.access(songs_file, os.F_OK):
 			print "You need to run `sori find PATTERN' first."
 		elif len(sys.argv) > 2:
+			if command == 'bgget':
+				sys.argv[1] = 'sget'
+				os.system(string.join(sys.argv, ' ')+' & > /dev/null')
+				sys.exit()
 			songs = pickle.load(open(songs_file, 'r'))
 			for no in sys.argv[2:]:
 				try:
