@@ -1,4 +1,4 @@
-#! /usr/local/bin/python
+#! /usr/bin/env python
 # ex:ts=4
 #
 # = Uzoo Client Library with Demo =
@@ -30,163 +30,14 @@
 # SUCH DAMAGE.
 #
 
-import urllib, re, sys
-from cStringIO import StringIO
-import struct, select
-import socket, time, dospath
-from errno import *
-
-SORIBADA_VERSION = '1.94'
-UZOO_RELEASE = '1.1'
-
-class UzooError(Exception):
-	def __init__(self, msg):
-		self.msg = msg
-		Exception.__init__(self, msg)
-
-unpack = {
-	4: lambda x: (x ^ 1 + 164) % 256,
-	8: lambda x: (x ^ 3 + 192) % 256,
-	12: lambda x: (x ^ 7 + 112) % 256,
-}
-
-def bada_unpack(bada):
-	bada = StringIO(bada)
-	fishes = []
-	
-	while 1:
-		phead = bada.read(2)
-		while len(phead) < 2 or not unpack.has_key(ord(phead[1])):
-			while bada.read(1) not in ['\x01', '']:
-				pass
-			phead = '\x01' + bada.read(1)
-			if len(phead) < 2:
-				break
-		ip = bada.read(4)
-		if len(ip) < 4:
-			break
-		upack = unpack[ord(phead[1])]
-		fishes.append( (
-			'%d.%d.%d.%d' % tuple([upack(ord(ip[i])) for i in (1,3,2,0)]),
-			9000 + ord(phead[0])
-		) )
-	
-	return fishes
-
-def bada_pack(addr):
-	ip, port = addr
-	sip = [chr(unpack[4](int(n))) for n in ip.split('.')]
-	return chr(port-9000) + '\x04' + sip[3] + sip[0] + sip[2] + sip[1]
-
-
-class QueryPacket:
-	
-	def __init__ (self, addr, keywords):
-		self.packet = '\x01%s%%s\x51\x3a%s' % (
-			bada_pack(addr), ''.join(['+%s\n' % k for k in keywords]) )
-		self.count = 94
-	
-	def __call__ (self):
-		self.count += 1
-		return self.packet % struct.pack('<H', self.count)
-
-
-def parse_reply(packet, username):
-	try:
-		bf = StringIO(packet[12:])
-		addr = bada_unpack(packet[1:7])[0]
-		id = bf.readline().strip()
-		downport = int(bf.readline())
-	except:
-		return []
-
-	r = []
-	for data in bf.read().split('\n\r\n'):
-		if not data.strip():
-			continue
-
-		try:
-			r.append( MP3Location(data, addr, id, downport, username) )
-		except:
-			pass
-	return r
-
-
-class MP3Location:
-	
-	fsize = re.compile("Filesize: ([0-9]+)")
-	
-	def __init__ (self, packet, addr, id, downport, username):
-		self.username = username
-		self.addr = addr
-		self.downport = downport
-		self.id = id
-		data = [s.strip() for s in packet.split('\n')][:6]
-		if len(data) == 6:
-			[self.path, self.size, self.length,
-			 self.bitrate, self.singer, self.title] = data
-			self.filename = dospath.split(self.path)[1]
-		else:
-			print "WRONG", repr(data)
-			raise ValueError, "Wrong Packet Found :: <<<" + repr(data) + ">>>"
-
-	def download (self, fsize_past, dir='.', sliderctrl=None):
-		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		try:
-			sock.connect((self.addr[0], int(self.downport)))
-		except socket.error, why:
-			if why[0] == ECONNREFUSED:
-				raise UzooError, "Connection Refused"
-			else:
-				raise socket.error, why
-
-		sock.send("GETMP3\r\nFilename: %s\r\nPosition: %d\r\n\
-PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, fsize_past, self.username) )
-		buff = ''
-		while buff.find('\r\n\r\n') < 0:
-			buff += sock.recv(1024)
-		rcv = buff.split('\r\n\r\n', 1)
-
-		header = rcv[0].split()
-		if int(header[2]) == 0 and len(rcv) > 1:
-			f = open(self.filename+".SORI", "ab")
-			f.write(rcv[1])
-
-			length = int(self.fsize.findall(rcv[0])[0])
-			if sliderctrl:
-				sliderctrl = sliderctrl(length)
-
-			read = len(rcv[1]) + fsize_past 
-			try:
-				while read < length:
-					buff = sock.recv(32768)
-					if not buff:
-						break
-					read += len(buff)
-					f.write(buff)
-					if sliderctrl:
-						sliderctrl.update(read)
-			except socket.error, why:
-				if why[0] == ECONNRESET:
-					raise UzooError, "Connection reset by peer."
-				else:
-					raise socket.error, why
-
-			f.close()
-			if sliderctrl:
-				sliderctrl.end()
-		elif int(header[2]) == 100:
-			raise UzooError, 'User Limit Exceeded'
-		else:
-			raise UzooError, 'Unknown Error: %d/%s' % (int(header[2]), ' '.join(header[3:]))
-
+import time
 
 class ConsoleSlider:
 	def __init__ (self, max):
 		self.barfill = -1
 		self.max = max
 		try:
-			import fcntl, termios
+			import fcntl, termios, struct
 			s = struct.pack("HHHH", 0, 0, 0, 0)
 			self.cols = struct.unpack("HHHH", fcntl.ioctl(sys.stdout.fileno(),
 								termios.TIOCGWINSZ, s))[1]
@@ -200,92 +51,21 @@ class ConsoleSlider:
 		newfill = int( float(value) * self.barsize / self.max )
 		if newfill != self.barfill:
 			self.barfill = newfill
-			elapsed = time.time()-self.st
-			sys.stdout.write('\r[%s%s] %3d%%  %d kB/s' % ('='*newfill,
-			    ' '*(self.barsize-newfill), newfill * 100 / self.barsize, 
-				 value / elapsed / 1024) )
-			if newfill*20 >= self.barsize: # over 5% 
+			sys.stdout.write('\r[%s%s] %d%%' % 
+				( '='*newfill,
+			   	  ' '*(self.barsize-newfill),
+				  newfill * 100 / self.barsize ) )
+			if newfill * 20 >= self.barsize: # over 5%
+				elapsed = time.time()-self.st
 				estimated = int((float(self.barsize) - newfill) / newfill * elapsed)
-				sys.stdout.write('  %d:%02d left ' % 
-						( int(estimated/60), int(estimated%60) ) ) # int is for py3k
+				sys.stdout.write('  %d kB/s  %d:%02d left ' % 
+					( value / elapsed / 1024,
+					  int(estimated/60),
+					  int(estimated%60) ) ) # int is for py3k
 			sys.stdout.flush()
 	
 	def end (self):
 		print
-
-
-class Uzoo:
-	
-	findbada = re.compile('ASR\n([^\n]*)\n')
-	myip = re.compile('MYIP\n([^\n]*)\n')
-	
-	def __init__ (self, username, password, server='http://www.soribada.com', port=9001):
-		self.username = username
-		self.password = password
-		self.port = port
-		loginurl = ''
-		for line in urllib.urlopen(server + '/gateway.txt').readlines():
-			if line.split('=')[0] == 'IS':
-				loginurl = line.split('=', 1)[-1].strip()
-				break
-		if not loginurl:
-			raise UzooError, "server doesn't served login gateway"
-		
-		info = urllib.urlopen('%s?username=%s&password=%s&version=%s' % \
-					(loginurl, username, password, SORIBADA_VERSION) ).read().replace('\r', '')
-		if not info.startswith('Version'):
-			raise UzooError, info.split('\n')[0]
-		
-		self.ip = self.myip.findall(info)[0]
-		self.badaurl = self.findbada.findall(info)[0]
-
-		self.update_bada()
-	
-	def update_bada (self):
-		bada = urllib.urlopen('%s?action=gimme&username=%s&password=%s' % (
-				self.badaurl, self.username, self.password) ).read()
-		self.bada = bada_unpack(bada)
-	
-	def do_query (self, keywords, listenlimit=5.0):
-		q = QueryPacket((self.ip, self.port), keywords)
-		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		sock.setblocking(0)
-		sock.bind(('', self.port))
-		for dest in self.bada:
-			while 1:
-				try:
-					sock.sendto(q(), dest)
-				except socket.error, why:
-					if why[0] in (ENOBUFS, EAGAIN, ETIMEDOUT, EWOULDBLOCK):
-						time.sleep(0.5)
-				else:
-					break
-		
-		st = time.time()
-		results = []
-		sfds = [sock.fileno()]
-		while time.time() - st < listenlimit:
-			if select.select(sfds, [], [], 1.0):
-				try:
-					while 1:
-						r = sock.recvfrom(8192)
-						if r:
-							results.extend( parse_reply(r[0], self.username) )
-						else:
-							break
-				except socket.error:
-					pass
-		sock.close()
-		return results
-
-
-def register(username, password, gender=0, speed=1, age=15, email="sori@bada.com", mailing=0):
-	res = urllib.urlopen("http://www.soribada.com/soribada.phtml?action=register\
-&username=%s&password=%s&speed=%d&gender=%d&age=%d&email=%s&mailing=%d" % (
-		username, password, speed, gender, age, email, mailing)).read()
-	if res.split()[3] != '000':
-		raise UzooError, res.split(' ', 3)[-1]
-
 
 def parse_rc():
 	import os
@@ -301,9 +81,12 @@ def parse_rc():
 
 if __name__ == '__main__':
 	import getpass, os
+	import sys, socket
+	import uzoolib
+	from uzoolib import UzooError
 
 	print "Uzoo Client for console / Release %s [Rev. %s]" % (
-					UZOO_RELEASE, "$Revision$".split()[1] )
+					uzoolib.UZOO_RELEASE, "$Revision$".split()[1] )
 	print "================================================================="
 	print "* Please visit http://sf.net/projects/soriuzoo for informations."
 	print
@@ -322,7 +105,7 @@ if __name__ == '__main__':
 				break
 		print "=> Registering..."
 		try:
-			register(id, password)
+			uzoolib.register(id, password)
 		except UzooError, why:
 			print "=> Registration Error ::", why
 			raise SystemExit
@@ -332,7 +115,7 @@ if __name__ == '__main__':
 		password = getpass.getpass('Password: ')
 
 	try:
-		s = Uzoo(id, password)
+		s = uzoolib.Uzoo(id, password)
 	except UzooError, why:
 		print "=> Login Error ::", why
 		raise SystemExit
