@@ -38,6 +38,7 @@ import java.net.Socket;
 import java.util.Properties;
 
 import uzoo.MP3File;
+import uzoo.io.Writable;
 /**
  * 주어진 mp3 파일을 실제로 다운로드해주는 클래스이다.
  * 다운로드중에 일어나는 일(파일완료, 예상치 못한 오류)등은.
@@ -55,13 +56,20 @@ public class Download extends Thread
 	private MP3File file = null;
 
 	private volatile long offset = 0;
+	private File toDownload = null;
 	private long filesize;
 	private long filesizeS;
 	private Properties prop = new Properties();
+	private int returnCode = -1;
 
 	private Socket socket = null;
 	private BufferedInputStream in = null;
 	private OutputStream out = null;
+
+	private OutputStream relayOut = null;
+	private Writable relayWritable = null;
+
+	private boolean isHandshake = false;
 
 	public Download( File dir, MP3File file )
 	{
@@ -70,6 +78,24 @@ public class Download extends Thread
 		
 		this.dir = dir;
 		this.file = file;
+	}
+
+	/**
+	 * 다운로드시, 파일시스템이 아닌 주어진 output stream으로
+	 * Relay 되도록 한다.
+	 */
+	public void setRelay( OutputStream out )
+	{
+		this.relayOut = out;
+	}
+
+	/**
+	 * 다운로드시, 파일시스템이 아닌 주어진 writable 인터페이스로
+	 * Relay 되도록 한다.
+	 */
+	public void setRelay( Writable out )
+	{
+		this.relayWritable = out;
 	}
 
 	/**
@@ -85,10 +111,10 @@ public class Download extends Thread
 	 * 
 	 * - 다운로드 완료
 	 * - 연결 실패 
-	 * - 연결 성공 직후 
-	 * - 연결 성공하였으나 100 User Limit 에러
+	 * - 연결 직후 (리턴값, 메시지와 함께)
 	 * - 퍼센트 변경 이벤트
-	 * - 그 밖의 예외
+	 * - 그밖의 예외
+	 * - 스레드 종료 이벤트
 	 */
 
 	/**
@@ -119,11 +145,12 @@ public class Download extends Thread
 	{
 		InetSocketAddress addr = file.getAddress();
 		this.socket = new Socket(addr.getHostAddress(), addr.getPort());
+		this.socket.setSoTimeout( 60000 );
 		this.in = new BufferedInputStream(socket.getInputStream());
 		this.out = socket.getOutputStream();
 	}
 
-	private void closeAll() 
+	public void closeAll() 
 	{
 		if( in!=null )
 		{
@@ -188,34 +215,141 @@ public class Download extends Thread
 	 */
 	protected void writeFile( File toStore ) throws IOException
 	{
-		FileOutputStream fos = new FileOutputStream(toStore.getAbsolutePath(), true);
+		downloadImpl( new FileOutputStream(toStore.getAbsolutePath(), true) );
+	}
+
+	protected void downloadImpl( OutputStream out ) throws IOException
+	{
 		try
-		{
-			long poffset=0L;
-			long ll = System.currentTimeMillis();
-			
+		{			
 			int pre = 0;
 
 			byte[] buf = new byte[ 4096 ];
 			int readlen;
 			while( (readlen=in.read(buf))!=-1 )
 			{
-				fos.write( buf, 0, readlen );
-				fos.flush();
+				out.write( buf, 0, readlen );
+				out.flush();
 				offset += readlen;
 				int percent = getDownloadedPercent();
 				if( percent!=pre )
 				{
 					pre = percent;					
 					// firePercentModifyEvent
-					System.out.print( percent + "% " );
 				}
 			}
 		}
 		finally
 		{
-			fos.close();
+			out.close();
 		}
+	}
+
+	protected void downloadImpl( Writable out ) throws IOException
+	{
+		try
+		{
+			int pre = 0;
+
+			byte[] buf = new byte[ 4096 ];
+			int readlen;
+			while( (readlen=in.read(buf))!=-1 )
+			{
+				out.write( buf, 0, readlen );
+				offset += readlen;
+				int percent = getDownloadedPercent();
+				if( percent!=pre )
+				{
+					pre = percent;	
+					if( percent==100 )
+						break;
+					// firePercentModifyEvent
+				}
+			}
+		}
+		finally
+		{
+			out.closeOut();			
+		}
+	}
+
+	/**
+	 * 파일 수신요청에 대한 응답정보를 얻어온다.
+	 * Succeded 이면 성공이고, 나머지는 모두 에러다.
+	 * 만약 handshake하기 전에 이 메소드를 부른다면, null을 반환할 것이다.
+	 */
+	public String getReturnMessage()
+	{
+		return prop.getProperty("MTP");
+	}
+
+	/**
+	 * 파일 수신을 위한 prepare를 한다.
+	 * 만약 return code가 0이라면 start를 하여 파일수신을 시작하도록 하라.
+	 *
+	 * 
+	 * @return     에러코드. (에러가 없을때는 0을 반환할 것이다.)
+	 * @exception  IOException  연결에 실패하였을때
+	 */
+	public int handshake() throws IOException
+	{
+		makeConnection();
+
+		long position = 0L;
+		toDownload = new File(dir, file.getFilename());
+		if( relayOut==null )	
+		{
+			position = toDownload.exists() ? toDownload.length() : 0L;
+		}
+
+		StringBuffer request = new StringBuffer();
+		request.append("GETMP3");
+		request.append("\r\n");
+		request.append("Filename: ");
+		request.append(file.getPath());
+		request.append("\r\n");
+		request.append("Position: ");
+		request.append(position);
+		request.append("\r\n");
+		request.append("PortM: 9999\r\n");
+		request.append("Username: ");
+		request.append(System.getProperty("uzoo.username"));
+		request.append("\r\n\r\n");
+
+		System.out.println( request );
+
+		out.write( request.toString().getBytes() );
+		out.flush();
+
+		this.returnCode = -1;
+		String line = null;
+		while( (line=readLine())!=null )
+		{
+			System.out.println( line );
+			int i0 = line.indexOf(':');
+			if( i0!=-1 )
+			{
+				String key = line.substring(0, i0).trim();
+				String value = line.substring(i0+1).trim();
+				prop.setProperty(key, value);
+			}
+			else
+			{
+				if( line.startsWith("MTP 1.0") )
+				{
+					returnCode = Integer.parseInt(line.substring(8, 11));
+					prop.setProperty("MTP", line.substring(12).trim());
+				}
+			}
+		}
+
+		this.filesize = Long.parseLong(
+			prop.getProperty("Filesize",String.valueOf(file.getSize())) );
+		this.filesizeS = filesize / 100L;
+
+		isHandshake = true;
+
+		return returnCode;
 	}
 
 	/**
@@ -226,49 +360,19 @@ public class Download extends Thread
 		int state = ERR_ATTEMPT_CONNECT;
 		try
 		{
-			makeConnection();
-			state = ERR_UNKNOWN_ERROR;
+			if( !isHandshake )
+				handshake();
+			if( returnCode!=0 )
+				throw new IOException(returnCode+" "+prop.getProperty("MTP"));
 
-			File toDownload = new File(dir, file.getFilename());
-			long position = toDownload.exists() ? toDownload.length() : 0L;
-	
-			StringBuffer request = new StringBuffer();
-			request.append("GETMP3");
-			request.append("\r\n");
-			request.append("Filename: ");
-			request.append(file.getPath());
-			request.append("\r\n");
-			request.append("Position: ");
-			request.append(position);
-			request.append("\r\n");
-			request.append("PortM: 9999\r\n");
-			request.append("Username: ");
-			request.append(System.getProperty("uzoo.username"));
-			request.append("\r\n\r\n");
-
-			System.out.println( request );
-
-			out.write( request.toString().getBytes() );
-			out.flush();
-
-			String line = null;
-			while( (line=readLine())!=null )
-			{
-				System.out.println( line );
-				int i0 = line.indexOf(':');
-				if( i0!=-1 )
-				{
-					String key = line.substring(0, i0).trim();
-					String value = line.substring(i0+1).trim();
-					prop.setProperty(key, value);
-				}
-			}
-	
-			this.filesize = Long.parseLong(
-				prop.getProperty("Filesize",String.valueOf(file.getSize())) );
-			this.filesizeS = filesize / 100L;
-
-			writeFile(toDownload);
+			if( relayOut==null && relayWritable==null )
+				writeFile(toDownload);
+			else
+			if( relayOut!=null )
+				downloadImpl( relayOut );
+			else
+			if( relayWritable!=null )
+				downloadImpl( relayWritable );
 		}
 		catch( Throwable e ) 
 		{

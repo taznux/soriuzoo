@@ -60,20 +60,22 @@ public class QueryShooter extends Thread
 
 	private DatagramSocket socket = null;
 	private boolean[] isComplete = null;
+	private long[] pingTable = null;
 	private int completeCount = 0;
-	private int loopCount = 30;
+	private int loopCount = 1;
 
 	public QueryShooter( String keyword, InetSocketAddress local, ArrayList list )
 		throws IOException
 	{
 		setName( "QueryShooter: " + keyword );
-		setPriority( MIN_PRIORITY );
+		setPriority( MAX_PRIORITY );
 
 		this.queryData = createQueryPacket( keyword, local );		
-		this.list = list;
+		this.list = (ArrayList)list.clone();
 		this.listsize = list.size();
 
 		isComplete = new boolean[ START_COUNT + list.size() ];
+		pingTable = new long[ START_COUNT + list.size() ];
 	}
 
 	/**
@@ -116,14 +118,17 @@ public class QueryShooter extends Thread
 	/**
 	 * Response를 받은 Index를 mark함으로하여 중복 request하지 않도록 
 	 * 마크한다.
+	 *
+	 * @return 응답시간.
 	 */
-	public void mark( int index )
+	public long mark( int index )
 	{
 		synchronized( isComplete )
 		{
 			isComplete[index] = true;
 		}
 		completeCount++;
+		return System.currentTimeMillis() - pingTable[index];
 	}
 
 	/**
@@ -150,10 +155,17 @@ public class QueryShooter extends Thread
 	/**
 	 * 검색 클라이언트에게 일괄적으로 쿼리를 전송한다.
 	 * UDP 손실을 고려하여 100번에 한번씩 30ms 적당히 쉬어준다.
+	 * <p>
+	 * System property로 <b>uzoo.query.interval</b>과 <b>uzoo.query.sleep</b>을 
+	 * 설정함으로 해서 udp 송신 주기를 결정할 수 있다.
 	 */
 	protected void requestQuery() throws Exception
 	{
 		DatagramPacket packet = new DatagramPacket( queryData, queryData.length );
+		int sended = 0;
+
+		int interval = Integer.getInteger("uzoo.query.interval", 10).intValue();
+		long sleep = Integer.getInteger("uzoo.query.sleep", 100).intValue();
 
 		for(int i=0; i<listsize; i++)
 		{
@@ -167,8 +179,10 @@ public class QueryShooter extends Thread
 			packet.setPort( addr.getPort() );
 			socket.send( packet );
 
-			if( (i%100)==0 )
-				Thread.currentThread().sleep(30L);
+			pingTable[i+START_COUNT] = System.currentTimeMillis();
+
+			if((++sended%interval)==0)
+				Thread.currentThread().sleep(sleep);
 		}
 	}
 
@@ -178,6 +192,8 @@ public class QueryShooter extends Thread
 	 * loopCount 만큼 무효한 request들에대해 재요청을 하기 때문에
 	 * 그만큼 많은 검색결과를 얻어올 확률이 높아진다.
 	 * 단 너무 값이 크면 무리가 된다. 100을 넘지 않길 바란다.
+	 *
+	 * @deprecated 더이상 사용되지 않는다.
 	 */
 	public void setLoopCount( int loopCount )
 	{
@@ -187,6 +203,8 @@ public class QueryShooter extends Thread
 	/**
 	 * UDP 패킷 손실을 고려하여 설정된 재요청 횟수를 얻어온다.
 	 * default 값은 30이다.
+	 *
+	 * @deprecated 더이상 사용되지 않는다.
 	 */
 	public int getLoopCount()
 	{
@@ -200,11 +218,7 @@ public class QueryShooter extends Thread
 	{
 		try	
 		{
-			for(int i=0; i<loopCount; i++)
-			{
-				requestQuery();
-				Thread.currentThread().sleep( 200L );
-			}
+			requestQuery();
 		}
 		catch( InterruptedException e ) {}
 		catch( SocketException e ) {}

@@ -110,7 +110,6 @@ public class ASRInputStream extends BufferedInputStream
 			offset += readlen;
 		}
 	
-		fixBlock();
 		return parseAddress( buffer );
 	}
 
@@ -121,64 +120,18 @@ public class ASRInputStream extends BufferedInputStream
 	 */
 	public static InetSocketAddress parseAddress( byte[] buffer ) throws IOException
 	{
-		int port = 9000 + unsign(buffer[0]);
-		int encodeCase = (int)buffer[1];
-
-		int xor;
-		int plus;
-
-		switch(encodeCase)
-		{
-		case 4:
-			xor = 1;
-			plus = 164;	
-			break;
-		case 8:
-			xor = 3;
-			plus = 192;	
-			break;
-		case 12:
-			xor = 7;
-			plus = 112;	
-			break;
-		default:
-			return new InetSocketAddress();
-		}
-
-		StringBuffer host = new StringBuffer(18);
-		host.append( decode(buffer[3],xor,plus) ); 
-		host.append( '.' );
-		host.append( decode(buffer[5],xor,plus) );
-		host.append( '.' );
-		host.append( decode(buffer[4],xor,plus) );
-		host.append( '.' );
-		host.append( decode(buffer[2],xor,plus) );
-
-		return new InetSocketAddress( host.toString(), port );
-	}
-	
-	/**
-	 * 6블럭짜리가 아닌 경우를 대비하여 0x01이 나올때까지
-	 * mark하면서 나가다가 0x01이 발견되면, reset하도록 되어있다.
-	 */
-	private void fixBlock() throws IOException
-	{
-		mark(0);
-		int buf;
-		while( (buf=read())!=-1 )
-		{
-			if( buf==0x01 )
-			{
-				reset();
-				return;
-			}
-			mark(0);
-		}
-	}
-
-	private static int decode( byte b, int xor, int plus )
-	{
-		return (unsign(b) ^ xor + plus) % 256;
+		int i0 = unsign(buffer[0]);
+		int i1 = unsign(buffer[1]);	
+		int port = i0 + ((i1 & 3)<<8) + 9000;
+		int magic = ((i1 & 12)>>2);
+		magic = magic==1 ? 0xA5 : (magic==2 ? 0xC3 : 0x77);		
+		int ip1 = (i1 & 0x10)==0x10 ? unsign(buffer[2]) : unsign(buffer[2]) ^ magic;
+		int ip2 = (i1 & 0x20)==0x20 ? unsign(buffer[3]) : unsign(buffer[3]) ^ magic;
+		int ip3 = (i1 & 0x40)==0x40 ? unsign(buffer[4]) : unsign(buffer[4]) ^ magic;
+		int ip4 = (i1 & 0x80)==0x80 ? unsign(buffer[5]) : unsign(buffer[5]) ^ magic;
+		return new InetSocketAddress( new StringBuffer()
+			.append(ip2).append('.').append(ip4).append('.')
+			.append(ip3).append('.').append(ip1).toString(), port );
 	}
 
 	private static int unsign( byte b )
@@ -194,4 +147,18 @@ public class ASRInputStream extends BufferedInputStream
 		return this.version;
 	}
 
+	public static void main( String[] args ) throws Exception
+	{
+		java.io.FileInputStream fis = new java.io.FileInputStream("toParse");
+		ASRInputStream in = new ASRInputStream(fis);
+		InetSocketAddress addr = null;
+		int count = 0;
+		while( (addr=in.readAddress())!=null )
+		{
+			System.out.println( addr );
+			if(count++==10) 
+				break;
+		}
+		in.close();
+	}
 }

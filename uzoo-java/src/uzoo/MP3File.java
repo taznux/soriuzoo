@@ -52,6 +52,17 @@ public class MP3File
 	private String rate;
 	private String artist;
 	private String title;
+	private long pingms;
+
+	public void setPingTime( long ms )
+	{
+		this.pingms = ms;
+	}
+
+	public long getPingTime()
+	{
+		return this.pingms;
+	}
 
 	public void setAddress( InetSocketAddress addr )
 	{

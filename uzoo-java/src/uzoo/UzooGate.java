@@ -250,16 +250,19 @@ public class UzooGate
 		throws IOException
 	{
 		socket = new DatagramSocket(9001);
-		socket.setSoTimeout(5000);
-
-		QueryShooter shooter = new QueryShooter( 
-			keyword, 
+		socket.setSoTimeout(15000);
+		
+		QueryShooter shooter = null;
+		try {
+		shooter = new QueryShooter( keyword, 
 			new InetSocketAddress(getProperty("MYIP"), 9001), 
 			this.serverList );
 		shooter.setSocket( socket );
 		shooter.start();
+		}
+		catch( Exception e ) { socket.close(); }
 
-		/** 종료 타이머 */
+		/** Terminater thread */
 		if( timeout!=0 )
 			new Thread( new Runnable() {
 				public void run()
@@ -288,11 +291,12 @@ public class UzooGate
 					int index = srr.getIndex();
 					if( shooter.isMark(index) )
 						continue;
-					shooter.mark( index );
+					long ping = shooter.mark( index );
 					
 					MP3File file = null;
 					while( (file=srr.readFile())!=null )
 					{
+						file.setPingTime(ping);
 						fireSearchEvent( new SearchEvent(this, file, index) );
 						files++;
 					}
@@ -447,13 +451,15 @@ public class UzooGate
 	{
 		final UzooGate uzoo = new UzooGate("windrath", "bandelas");
 		System.out.println( uzoo.updateDatabase() );
+		long ll = System.currentTimeMillis();
 		uzoo.addSearchListener( new SearchListener() {
+			private int cc = 0;
 			public void foundMP3( SearchEvent e )
 			{
 				MP3File file = e.getFile();
-				System.out.println( file );
+				System.out.println( (++cc) + ": " + file );
 
-				if( isFirst )
+				if( !isFirst )
 				{
 					isFirst= false;
 					uzoo.stopSearch();
@@ -462,7 +468,8 @@ public class UzooGate
 				}
 			}
 		});
-		int count = uzoo.search(args[0], 5000);
+		int count = uzoo.search(args[0]);
 		System.out.println( count + " song(s) found" );
+		System.out.println( "Time: " + (System.currentTimeMillis()-ll) );
 	}
 }
