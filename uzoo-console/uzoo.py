@@ -279,7 +279,7 @@ class Uzoo:
 		return results
 
 
-def register(username, password, gender=0, speed=1, age=15, email="sori@@bada.com", mailing=0):
+def register(username, password, gender=0, speed=1, age=15, email="sori@bada.com", mailing=0):
 	res = urllib.urlopen("http://www.soribada.com/soribada.phtml?action=register\
 &username=%s&password=%s&speed=%d&gender=%d&age=%d&email=%s&mailing=%d" % (
 		username, password, speed, gender, age, email, mailing)).read()
