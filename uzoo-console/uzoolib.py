@@ -125,7 +125,7 @@ class MP3Location:
 			print "WRONG", repr(data)
 			raise ValueError, "Wrong Packet Found :: <<<" + repr(data) + ">>>"
 
-	def download (self, dir='.', sliderctrl=None):
+	def download (self, fsize_past, dir='.', sliderctrl=None):
 		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		try:
 			sock.connect((self.addr[0], int(self.downport)))
@@ -135,8 +135,8 @@ class MP3Location:
 			else:
 				raise socket.error, why
 
-		sock.send("GETMP3\r\nFilename: %s\r\nPosition: 0\r\n\
-PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, self.username) )
+		sock.send("GETMP3\r\nFilename: %s\r\nPosition: %d\r\n\
+PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, fsize_past, self.username) )
 		buff = ''
 		while buff.find('\r\n\r\n') < 0:
 			buff += sock.recv(1024)
@@ -144,14 +144,14 @@ PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, self.username) )
 
 		header = rcv[0].split()
 		if int(header[2]) == 0 and len(rcv) > 1:
-			f = open(self.filename, "wb")
+			f = open(self.filename+".SORI", "ab")
 			f.write(rcv[1])
 
 			length = int(self.fsize.findall(rcv[0])[0])
 			if sliderctrl:
 				sliderctrl = sliderctrl(length)
 
-			read = len(rcv[1])
+			read = len(rcv[1]) + fsize_past
 			try:
 				while read < length:
 					buff = sock.recv(32768)
@@ -248,6 +248,3 @@ def register(username, password, gender=0, speed=1, age=15, email="sori@bada.com
 	if res.split()[3] != '000':
 		raise UzooError, res.split(' ', 3)[-1]
 
-
-for i in bada_unpack(open("asr").read()):
-	print i
