@@ -180,7 +180,7 @@ class ConsoleSlider:
 		if newfill != self.barfill:
 			self.barfill = newfill
 			sys.stdout.write('\r[%s%s] %3d%% %d kB/s' % ('='*newfill,
-				' '*(self.barsize-newfill), newfill * 100 / self.barsize,
+			    ' '*(self.barsize-newfill), newfill * 100 / self.barsize,
 				value/(time.time()-self.st)/1024 ) )
 			sys.stdout.flush()
 	
@@ -345,7 +345,7 @@ if __name__ == '__main__':
 			n = raw_input("Download which? ('q' for quit) >>> ")
 			if n[0] == 'q':
 				break
-			print "=> Downloading...."
+			print "=> Downloading.... "+results[int(n)].filename
 			try:
 				results[int(n)].download(sliderctrl=ConsoleSlider)
 			except UzooError, why:
