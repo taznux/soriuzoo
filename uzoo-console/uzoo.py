@@ -32,7 +32,7 @@
 
 import urllib, re, sys
 from cStringIO import StringIO
-import struct, select, os
+import struct, select
 import socket, time, dospath
 from errno import *
 
@@ -204,7 +204,7 @@ class ConsoleSlider:
 			sys.stdout.write('\r[%s%s] %3d%%  %d kB/s' % ('='*newfill,
 			    ' '*(self.barsize-newfill), newfill * 100 / self.barsize, 
 				 value / elapsed / 1024) )
-			if elapsed >= 1 : # over 5 sec 
+			if newfill*20 >= self.barsize: # over 5% 
 				estimated = int((float(self.barsize) - newfill) / newfill * elapsed)
 				sys.stdout.write('  %d:%02d left ' % 
 						( int(estimated/60), int(estimated%60) ) ) # int is for py3k
@@ -279,7 +279,7 @@ class Uzoo:
 		return results
 
 
-def register(username, password, gender=0, speed=1, age=15, email="sori@bada.com", mailing=0):
+def register(username, password, gender=0, speed=1, age=15, email="sori@@bada.com", mailing=0):
 	res = urllib.urlopen("http://www.soribada.com/soribada.phtml?action=register\
 &username=%s&password=%s&speed=%d&gender=%d&age=%d&email=%s&mailing=%d" % (
 		username, password, speed, gender, age, email, mailing)).read()
