@@ -12,10 +12,10 @@
 # modification, are permitted provided that the following conditions
 # are met:
 # 1. Redistributions of source code must retain the above copyright
-#    notice, this list of conditions and the following disclaimer.
+#	notice, this list of conditions and the following disclaimer.
 # 2. Redistributions in binary form must reproduce the above copyright
-#    notice, this list of conditions and the following disclaimer in the
-#    documentation and/or other materials provided with the distribution.
+#	notice, this list of conditions and the following disclaimer in the
+#	documentation and/or other materials provided with the distribution.
 #
 # THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
 # ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -34,9 +34,11 @@ import time
 UZOO_RELEASE = '1.2'
 
 class ConsoleSlider:
-	def __init__ (self, max):
+	def __init__ (self, max, initpos):
 		self.barfill = -1
 		self.max = max
+		self.initpos = initpos
+		self.sessmax = max - initpos
 		try:
 			import fcntl, termios, struct
 			s = struct.pack("HHHH", 0, 0, 0, 0)
@@ -49,16 +51,17 @@ class ConsoleSlider:
 		self.update(0)
 	
 	def update (self, value):
-		newfill = int( float(value) * self.barsize / self.max )
+		newfill = int( float(value+self.initpos) * self.barsize / self.max )
 		if newfill != self.barfill:
 			self.barfill = newfill
 			sys.stdout.write('\r[%s%s] %d%%' % 
 				( '='*newfill,
 			   	  ' '*(self.barsize-newfill),
 				  newfill * 100 / self.barsize ) )
-			if newfill * 20 >= self.barsize: # over 5%
-				elapsed = time.time()-self.st
-				estimated = int((float(self.barsize) - newfill) / newfill * elapsed)
+
+			if value * 20 >= self.sessmax: # over 5%
+				elapsed = time.time() - self.st
+				estimated = int(float(self.sessmax) / value * elapsed - elapsed)
 				sys.stdout.write('  %d kB/s  %d:%02d left ' % 
 					( value / elapsed / 1024,
 					  int(estimated/60),
@@ -145,56 +148,58 @@ if __name__ == '__main__':
 		print "================================================================="
 		c = 0
 		for r in results:
-			print "%3d %8s %5s    %3s %s" % (
+			print "%3d %8s %5s	%3s %s" % (
 				c, r.size, r.length, r.bitrate, r.filename)
 			c += 1
 		print "================================================================="
 		print "=> %d song(s) found." % len(results)
 
 		while 1:
-			ans = raw_input("Download which? ('q' for quit) >>> ")
+			ans = raw_input("Download which? ('q' for search others) >>> ")
 			if ans and ans[0] == 'q':
 				break
-			fsize_past=0
+
 			try:
-                dest = results[int(ans)]
-            except ValueError:
-                continue
-            except IndexError:
-                print "=> Please select one of listed above."
-                continue
-			try:
-				os.stat(dest.filename)
-			except:
-				pass
-			else:
-				print "=> Already download"
-			try:
-				fsize_past=os.stat(dest.filename+".SORI")[6]
-			except:
-				pass
-			else:
-				print "=> Resuming download"
-	
-			try:
-                print "=> Downloading.... " + dest.filename
-				dest.download(fsize_past, sliderctrl=ConsoleSlider)
-			except UzooError, why:
-				print "=> Downloading Error:", why
-			except socket.error, why:
-				print "=> Connection Error on Downloading:", repr(why)
-			except KeyboardInterrupt:
-				print "\n=> User Interrupt"
+				dest = results[int(ans)]
+			except ValueError:
+				continue
+			except IndexError:
+				print "=> Please select one of listed above."
+				continue
+			
+			resume, overwrite = 0, 0
+			print "=> Downloading.... '%s'" % dest.filename
+			while 1:
 				try:
-					ans = raw_input("Remove not completed file ? ")
-					if ans[0].lower() == 'y':
-						os.remove(dest.filename+".SORI")
+					dest.download(sliderctrl=ConsoleSlider, 
+								allow_resume=resume, allow_overwrite=overwrite)
+				except UzooError, why:
+					if why.errno == uzoolib.UZ_WOULDRESUME:
+						ans = raw_input('Resume Download Process ? ')
+						if ans[0].lower() == 'y':
+							resume = 1
+							continue
+					elif why.errno == uzoolib.UZ_FILEEXIST:
+						ans = raw_input('Overwrite the file ? ')
+						if ans[0].lower() == 'y':
+							overwrite = 1
+							continue
 					else:
+						print "=> Downloading Error:", why.msg
+				except socket.error, why:
+					print "=> Connection Error on Downloading:", why[1]
+				except KeyboardInterrupt:
+					print "\n=> User Interrupt"
+					try:
+						ans = raw_input("Remove not completed file ? ")
+						if ans[0].lower() == 'y':
+							os.remove(dest._filepath(1))
+					except IndexError:
 						pass
-				except IndexError:
-					pass
-			else:
-				os.rename(dest.filename+".SORI",dest.filename)
-				print "=> Download Complete!"
-				parse_rc() # XXX: temporary for a while ;)
+					except OSError:
+						pass
+				else:
+					print "=> Download Complete!"
+
+				break
 

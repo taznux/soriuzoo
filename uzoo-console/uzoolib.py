@@ -30,7 +30,7 @@
 # SUCH DAMAGE.
 #
 
-import urllib, re, sys
+import urllib, re, sys, os
 from cStringIO import StringIO
 import struct, select
 import socket, time, dospath
@@ -38,8 +38,15 @@ from errno import *
 
 SORIBADA_VERSION = '1.94'
 
+(
+UZ_CONNREFUSED, UZ_CONNRESET, UZ_NOGATEWAY, UZ_USERLIMIT,
+UZ_UNKNOWN, UZ_LOGINERR, UZ_REGISTERERR, UZ_FILEEXIST,
+UZ_WOULDRESUME
+) = range(9)
+
 class UzooError(Exception):
-	def __init__(self, msg):
+	def __init__(self, errno, msg):
+		self.errno = errno
 		self.msg = msg
 		Exception.__init__(self, msg)
 
@@ -110,6 +117,8 @@ def parse_reply(packet, username):
 class MP3Location:
 	
 	fsize = re.compile("Filesize: ([0-9]+)")
+	dl_sufx = '.UZOO'
+	downdir = '.'
 	
 	def __init__ (self, packet, addr, id, downport, username):
 		self.username = username
@@ -125,18 +134,31 @@ class MP3Location:
 			print "WRONG", repr(data)
 			raise ValueError, "Wrong Packet Found :: <<<" + repr(data) + ">>>"
 
-	def download (self, fsize_past, dir='.', sliderctrl=None):
+	def _filepath (self, inprocess=0):
+		return os.path.join(self.downdir, self.filename + (inprocess and self.dl_sufx or ''))
+
+	def download (self, sliderctrl=None, allow_resume=0, allow_overwrite=0):
 		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		try:
 			sock.connect((self.addr[0], int(self.downport)))
 		except socket.error, why:
 			if why[0] == ECONNREFUSED:
-				raise UzooError, "Connection Refused"
+				raise UzooError(UZ_CONNREFUSED, "Connection Refused")
 			else:
 				raise socket.error, why
 
+		if not allow_overwrite and os.access(self._filepath(0), os.F_OK):
+			raise UzooError(UZ_FILEEXIST, "File Exists")
+
+		if os.access(self._filepath(1), os.F_OK):
+			if not allow_resume:
+				raise UzooError(UZ_WOULDRESUME, "Can Be Resumed")
+			position = os.stat(self._filepath(1))[6]
+		else:
+			position = 0
+
 		sock.send("GETMP3\r\nFilename: %s\r\nPosition: %d\r\n\
-PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, fsize_past, self.username) )
+PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, position, self.username) )
 		buff = ''
 		while buff.find('\r\n\r\n') < 0:
 			buff += sock.recv(1024)
@@ -144,14 +166,15 @@ PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, fsize_past, self.username) )
 
 		header = rcv[0].split()
 		if int(header[2]) == 0 and len(rcv) > 1:
-			f = open(self.filename+".SORI", "ab")
+			f = open(self._filepath(1), position and 'ab' or 'wb')
 			f.write(rcv[1])
 
 			length = int(self.fsize.findall(rcv[0])[0])
 			if sliderctrl:
-				sliderctrl = sliderctrl(length)
+				sliderctrl = sliderctrl(length, position)
+			length -= position
 
-			read = len(rcv[1]) + fsize_past
+			read = len(rcv[1])
 			try:
 				while read < length:
 					buff = sock.recv(32768)
@@ -163,18 +186,19 @@ PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, fsize_past, self.username) )
 						sliderctrl.update(read)
 			except socket.error, why:
 				if why[0] == ECONNRESET:
-					raise UzooError, "Connection reset by peer."
+					raise UzooError(UZ_CONNRESET, "Connection reset by peer.")
 				else:
 					raise socket.error, why
 
 			f.close()
 			if sliderctrl:
 				sliderctrl.end()
+			os.rename(self._filepath(1), self._filepath(0))
 		elif int(header[2]) == 100:
-			raise UzooError, 'User Limit Exceeded'
+			raise UzooError(UZ_USERLIMIT, 'User Limit Exceeded')
 		else:
-			raise UzooError, 'Unknown Error: %d/%s' % (int(header[2]), ' '.join(header[3:]))
-
+			raise UzooError(UZ_UNKNOWN, 'Unknown Error: %d/%s' % (
+									int(header[2]), ' '.join(header[3:])))
 
 class Uzoo:
 	
@@ -191,12 +215,12 @@ class Uzoo:
 				loginurl = line.split('=', 1)[-1].strip()
 				break
 		if not loginurl:
-			raise UzooError, "server doesn't served login gateway"
+			raise UzooError(UZ_NOGATEWAY, "server doesn't served login gateway")
 		
 		info = urllib.urlopen('%s?username=%s&password=%s&version=%s' % \
 					(loginurl, username, password, SORIBADA_VERSION) ).read().replace('\r', '')
 		if not info.startswith('Version'):
-			raise UzooError, info.split('\n')[0]
+			raise UzooError(UZ_LOGINERR, info.split('\n')[0])
 		
 		self.ip = self.myip.findall(info)[0]
 		self.badaurl = self.findbada.findall(info)[0]
@@ -246,5 +270,5 @@ def register(username, password, gender=0, speed=1, age=15, email="sori@bada.com
 &username=%s&password=%s&speed=%d&gender=%d&age=%d&email=%s&mailing=%d" % (
 		username, password, speed, gender, age, email, mailing)).read()
 	if res.split()[3] != '000':
-		raise UzooError, res.split(' ', 3)[-1]
+		raise UzooError(UZ_REGISTERERR, res.split(' ', 3)[-1])
 
