@@ -188,7 +188,7 @@ public class Download extends Thread
 	 */
 	protected void writeFile( File toStore ) throws IOException
 	{
-		FileOutputStream fos = new FileOutputStream(toStore, true);
+		FileOutputStream fos = new FileOutputStream(toStore.getAbsolutePath(), true);
 		try
 		{
 			long poffset=0L;
