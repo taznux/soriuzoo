@@ -34,7 +34,8 @@ import time, os
 UZOO_RELEASE = '1.2'
 
 class ConsoleSlider:
-	def __init__ (self, max, initpos):
+	def __init__ (self, max, initpos, slidertype='down'): # 'down' or 'search'
+		self.type = slidertype
 		self.barfill = -1
 		self.max = max
 		self.initpos = initpos
@@ -50,7 +51,7 @@ class ConsoleSlider:
 		self.st = time.time()
 		self.update(0)
 	
-	def update (self, value):
+	def update (self, value, *ext):
 		newfill = int( float(value+self.initpos) * self.barsize / self.max )
 		if newfill != self.barfill:
 			self.barfill = newfill
@@ -59,13 +60,15 @@ class ConsoleSlider:
 			   	  ' '*(self.barsize-newfill),
 				  newfill * 100 / self.barsize ) )
 
-			if value * 20 >= self.sessmax: # over 5%
+			if self.type == 'down' and value * 20 >= self.sessmax: # over 5%
 				elapsed = time.time() - self.st
 				estimated = int(float(self.sessmax) / value * elapsed - elapsed)
 				sys.stdout.write('  %d kB/s  %d:%02d left ' % 
 					( value / elapsed / 1024,
 					  int(estimated/60),
 					  int(estimated%60) ) ) # int is for py3k
+			elif self.type == 'search' and ext:
+				sys.stdout.write(' (%d found) %s   ' % (ext[0], ext[1]))
 			sys.stdout.flush()
 	
 	def end (self):
@@ -136,11 +139,19 @@ if __name__ == '__main__':
 	else:
 		password = getpass.getpass('Password: ')
 
-	try:
-		s = uzoolib.Uzoo(id, password)
-	except UzooError, why:
-		print "=> Login Error ::", why
-		raise SystemExit
+	port = 9001
+	while 1:
+		try:
+			s = uzoolib.Uzoo(id, password, port=port)
+		except UzooError, why:
+			if why.errno == uzoolib.UZ_BINDERR:
+				port += 1
+				continue
+			else:
+				print "=> Login Error ::", why
+				raise SystemExit
+		else:
+			break
 	print "=> Login Successful!"
 	print "=> Your IP is %s" % s.ip
 	print "=> %d fishes are online" % len(s.bada)
@@ -155,7 +166,7 @@ if __name__ == '__main__':
 			continue
 
 		print "=> Searching...."
-		results = s.do_query(keywords.split())
+		results = s.do_query(keywords.split(), 10, sliderctrl=ConsoleSlider)
 
 		if not results:
 			print "=> No such song ;)"

@@ -41,8 +41,8 @@ SORIBADA_VERSION = '1.94'
 (
 UZ_CONNREFUSED, UZ_CONNRESET, UZ_NOGATEWAY, UZ_USERLIMIT,
 UZ_UNKNOWN, UZ_LOGINERR, UZ_REGISTERERR, UZ_FILEEXIST,
-UZ_WOULDRESUME
-) = range(9)
+UZ_WOULDRESUME, UZ_BINDERR
+) = range(10)
 
 class UzooError(Exception):
 	def __init__(self, errno, msg):
@@ -200,12 +200,22 @@ PortM: 9999\r\nUsername: %s\r\n\r\n" % (self.path, position, self.username) )
 			raise UzooError(UZ_UNKNOWN, 'Unknown Error: %d/%s' % (
 									int(header[2]), ' '.join(header[3:])))
 
+
 class Uzoo:
 	
 	findbada = re.compile('ASR\n([^\n]*)\n')
 	myip = re.compile('MYIP\n([^\n]*)\n')
 	
 	def __init__ (self, username, password, server='http://www.soribada.com', port=9001):
+		try:
+			# test availablity
+			socket.socket(socket.AF_INET, socket.SOCK_DGRAM).bind(('', port))
+		except socket.error, why:
+			if why[0] == EADDRINUSE:
+				raise UzooError(UZ_BINDERR, "Can't listen soribada address")
+			else:
+				raise socket.error, why
+
 		self.username = username
 		self.password = password
 		self.port = port
@@ -232,26 +242,39 @@ class Uzoo:
 				self.badaurl, self.username, self.password) ).read()
 		self.bada = bada_unpack(bada)
 	
-	def do_query (self, keywords, listenlimit=5.0):
+	def do_query (self, keywords, maxnum=2500, sliderctrl=None):
 		q = QueryFactory((self.ip, self.port), keywords)
 		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		sock.setblocking(0)
 		sock.bind(('', self.port))
-		for dest in self.bada:
-			while 1:
-				try:
-					sock.sendto(q(), dest)
-				except socket.error, why:
-					if why[0] in (ENOBUFS, EAGAIN, ETIMEDOUT, EWOULDBLOCK):
-						time.sleep(0.5)
-				else:
-					break
-		
+
+		casr = 0
 		st = time.time()
 		results = []
 		sfds = [sock.fileno()]
-		while time.time() - st < listenlimit:
-			if select.select(sfds, [], [], 1.0):
+		resolution = 0.1
+		throwunit = 15
+		sweeptime = 3.0
+		lastscan = 0
+		scanend = 0
+		if sliderctrl:
+			sliderctrl = sliderctrl(len(self.bada), 0, slidertype='search')
+
+		while scanend < time.time():
+			if not scanend and lastscan + resolution < time.time():
+				error = ''
+				try:
+					for i in range(casr, casr+throwunit):
+						sock.sendto(q(), self.bada[i])
+					casr = i + 1
+				except socket.error, why:
+					casr = i
+					error += 's'
+				except IndexError:
+					error += 'e'
+					scanend = time.time() + sweeptime
+
+			if select.select(sfds, [], [], resolution):
 				try:
 					while 1:
 						r = sock.recvfrom(8192)
@@ -259,9 +282,17 @@ class Uzoo:
 							results.extend( parse_reply(r[0], self.username) )
 						else:
 							break
-				except socket.error:
-					pass
+				except socket.error, why:
+					if why[0] not in [EAGAIN, EWOULDBLOCK, ECONNRESET]:
+						raise socket.error, why
+					error += 'r'
+
+				if sliderctrl:
+					sliderctrl.update(casr, len(results), error)
+
 		sock.close()
+		if sliderctrl:
+			sliderctrl.end()
 		return results
 
 
