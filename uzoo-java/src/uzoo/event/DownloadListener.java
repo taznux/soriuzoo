@@ -1,7 +1,7 @@
 /*
- * @(#)SearchListener.java
+ * @(#)DownloadListener.java
  *
- * Copyright (c) 2001-2002 Jang-ho Hwang, 
+ * Copyright (c) 2001-2002 Jang-ho Hwang,
  * All Rights Reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,18 +29,27 @@
  */
 package uzoo.event;
 
-import java.util.EventListener;
-import uzoo.MP3File;
 /**
- * 검색 결과에 대한 이벤트 리스너이다.
+ * 특정 mp3파일을 다운로드하면서 일어나는 이벤트들을 청취할 수 있게
+ * 해주는 EventListener interface이다.
  * 
- * @author Jang-ho Hwang, rath@xrath.com
- * @version $Id$, since 2002/01/28
+ * @author Jangho Hwang, rath@xrath.com
+ * @version 1.0.000, $Id$, since 2002/02/17
  */
-public interface SearchListener extends EventListener
+public interface DownloadListener 
 {
 	/**
-	 * mp3 파일 하나가 검색되었을때 불려진다. 
+	 * 앞 처리를 끝내고 파일 다운로드가 시작되었다는 것을 알려준다.
 	 */
-	public void foundMP3( SearchEvent e );
-}
+	public void downloadStart( DownloadEvent e );
+	
+	/**
+	 * 다운로드 퍼센트가 바뀌었을때마다 알려준다.
+	 */
+	public void downloadProgress( DownloadEvent e );
+
+	/**
+	 * 다운로드 작업중 예외가 발생한 사실을 통지해준다.
+	 */
+	public void downloadError( DownloadEvent e );
+};

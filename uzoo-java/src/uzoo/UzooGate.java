@@ -246,7 +246,7 @@ public class UzooGate
 	 * @param  keyword  공백(0x20)을 구분으로 하는 검색키워드.
 	 * @param  timeout  검색결과를 읽어올 제한 시간 (millisecond단위)
 	 */
-	public int search( String keyword, final int timeout ) 
+	public synchronized int search( String keyword, final int timeout ) 
 		throws IOException
 	{
 		socket = new DatagramSocket(9001);

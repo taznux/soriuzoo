@@ -36,9 +36,12 @@ import java.io.BufferedInputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.util.Properties;
+import java.util.Vector;
 
 import uzoo.MP3File;
 import uzoo.io.Writable;
+import uzoo.event.DownloadListener;
+import uzoo.event.DownloadEvent;
 /**
  * 주어진 mp3 파일을 실제로 다운로드해주는 클래스이다.
  * 다운로드중에 일어나는 일(파일완료, 예상치 못한 오류)등은.
@@ -51,6 +54,8 @@ public class Download extends Thread
 {
 	public static final int ERR_ATTEMPT_CONNECT = 0;
 	public static final int ERR_UNKNOWN_ERROR = 9;
+
+	protected Vector listeners = new Vector();
 
 	private File dir = null;
 	private MP3File file = null;
@@ -96,6 +101,17 @@ public class Download extends Thread
 	public void setRelay( Writable out )
 	{
 		this.relayWritable = out;
+	}
+
+	public void addDownloadListener( DownloadListener l )
+	{
+		if( !listeners.contains(l) )
+			listeners.addElement(l);
+	}
+
+	public void removeDownloadListener( DownloadListener l )
+	{
+		listeners.remove(l);
 	}
 
 	/**
@@ -234,8 +250,13 @@ public class Download extends Thread
 				int percent = getDownloadedPercent();
 				if( percent!=pre )
 				{
-					pre = percent;					
-					// firePercentModifyEvent
+					DownloadEvent e = new DownloadEvent(this, DownloadEvent.DOWNLOAD_PROGRESS);
+					e.setDownloadedPercent(percent);
+					fireDownloadEvent(e);
+
+					pre = percent;
+					if( percent==100 )
+						break;
 				}
 			}
 		}
@@ -260,10 +281,13 @@ public class Download extends Thread
 				int percent = getDownloadedPercent();
 				if( percent!=pre )
 				{
+					DownloadEvent e = new DownloadEvent(this, DownloadEvent.DOWNLOAD_PROGRESS);
+					e.setDownloadedPercent(percent);
+					fireDownloadEvent(e);
+
 					pre = percent;	
 					if( percent==100 )
 						break;
-					// firePercentModifyEvent
 				}
 			}
 		}
@@ -316,8 +340,6 @@ public class Download extends Thread
 		request.append(System.getProperty("uzoo.username"));
 		request.append("\r\n\r\n");
 
-		System.out.println( request );
-
 		out.write( request.toString().getBytes() );
 		out.flush();
 
@@ -325,7 +347,6 @@ public class Download extends Thread
 		String line = null;
 		while( (line=readLine())!=null )
 		{
-			System.out.println( line );
 			int i0 = line.indexOf(':');
 			if( i0!=-1 )
 			{
@@ -339,6 +360,12 @@ public class Download extends Thread
 				{
 					returnCode = Integer.parseInt(line.substring(8, 11));
 					prop.setProperty("MTP", line.substring(12).trim());
+					if( returnCode!=0 )
+					{
+						DownloadEvent e = new DownloadEvent(this, DownloadEvent.DOWNLOAD_ERROR);
+						e.setError( new RuntimeException(prop.getProperty("MTP")) );
+						fireDownloadEvent(e);
+					}					
 				}
 			}
 		}
@@ -348,8 +375,29 @@ public class Download extends Thread
 		this.filesizeS = filesize / 100L;
 
 		isHandshake = true;
-
+		fireDownloadEvent(new DownloadEvent(this,DownloadEvent.DOWNLOAD_START));
+		
 		return returnCode;
+	}
+
+	protected void fireDownloadEvent( DownloadEvent e )
+	{
+		for(int i=listeners.size()-1; i>=0; i--)
+		{
+			DownloadListener l = (DownloadListener)listeners.elementAt(i);
+			switch( e.getId() )
+			{
+			case DownloadEvent.DOWNLOAD_START:
+				l.downloadStart(e);
+				break;
+			case DownloadEvent.DOWNLOAD_PROGRESS:
+				l.downloadProgress(e);
+				break;
+			case DownloadEvent.DOWNLOAD_ERROR:
+				l.downloadError(e);
+				break;
+			}
+		}
 	}
 
 	/**
@@ -376,6 +424,10 @@ public class Download extends Thread
 		}
 		catch( Throwable e ) 
 		{
+			DownloadEvent evt = new DownloadEvent(this, DownloadEvent.DOWNLOAD_ERROR);
+			evt.setError( e );
+			fireDownloadEvent(evt);
+
 			processError( state, e );
 		}
 		finally
