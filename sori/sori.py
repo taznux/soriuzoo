@@ -1,9 +1,18 @@
 #! /usr/bin/env python
 
-import sys, os, re, urllib, time, getpass, string
-import struct, select, socket, dospath, pickle
-from cStringIO import StringIO
+# Shell ORiented interface for Uzoo.
+# Copyright (C) 2002 by A Lee <alee@debian.org>.
+#
+# This software is free; you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2, or (at your option) any later version.
+
+import sys, os, re, time, urllib
+import struct, select, socket, dospath
 from errno import *
+from cStringIO import StringIO
+try: from cPickle import dump, load
+except: from Pickle import dump, load
 
 SORIBADA_VERSION = '1.94'
 SORIBADA_GATEWAY = 'http://www.soribada.com/gateway.txt'
@@ -11,6 +20,7 @@ sori_dir = os.environ.get('HOME', '.') + '/.sori'
 config_file = sori_dir + '/config'
 hosts_file = sori_dir + '/hosts'
 songs_file = sori_dir + '/songs'
+status_file = sori_dir + '/status'
 
 
 class ConsoleSlider:
@@ -21,7 +31,7 @@ class ConsoleSlider:
 		self.initpos = initpos
 		self.sessmax = max - initpos
 		try:
-			import fcntl, termios, struct
+			import fcntl, termios
 			s = struct.pack("HHHH", 0, 0, 0, 0)
 			self.cols = struct.unpack("HHHH",
 				fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, s))[1]
@@ -63,6 +73,18 @@ def save_config(config_file, username, password, port=9001):
 	general = "[General]\nusername=%s\npassword=%s\nport=%s\n"
 	config = general % (username, password, port)
 	open(config_file, 'w').write(config)
+
+def status_edit(status_file, pid, item=None):
+	if os.access(status_file, os.F_OK):
+		status = load(open(status_file, 'r'))
+	else: status = {}
+	if item:
+		status[pid] = item
+		dump(status, open(status_file, 'w'))
+	else:
+		del status[pid]
+	if status: dump(status, open(status_file, 'w'))
+	else: os.remove(status_file)
 
 def bada_unpack(asrbuf):
 	bada = StringIO(asrbuf)
@@ -209,6 +231,8 @@ def download(username, item, sliderctrl=ConsoleSlider):
 	file = re.compile('[_-]*[-\[\]\(\)\{\}][_-]*').sub('-', file)
 	file = re.compile('^[_-]*').sub('', file)
 	file = re.compile('[-_]*\.[mM][pP]3$').sub('.mp3', file)
+	localfile = os.path.join(os.getcwd(), file)
+
 	if sliderctrl: print ('Starting to download: %s' % file)
 	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	sock.connect((item[0], item[1]))
@@ -219,10 +243,12 @@ def download(username, item, sliderctrl=ConsoleSlider):
 	rcv = buff.split('\r\n\r\n', 1)
 	fsize = re.compile("Filesize: ([0-9]+)")
 	header = rcv[0].split()
+	length = int(fsize.findall(rcv[0])[0])
+
 	if int(header[2]) == 0 and len(rcv) > 1:
-		f = open(file, "w")
+		status_edit(status_file, os.getpid(), (int(time.time()), length, localfile))
+		f = open(localfile, "w")
 		f.write(rcv[1])
-		length = int(fsize.findall(rcv[0])[0])
 		if sliderctrl: sliderctrl = sliderctrl(length, 0)
 		read = len(rcv[1])
 		while read < length:
@@ -232,13 +258,14 @@ def download(username, item, sliderctrl=ConsoleSlider):
 			f.write(buff)
 			if sliderctrl: sliderctrl.update(read)
 		f.close()
+		status_edit(status_file, os.getpid())
 		if sliderctrl:
 			sliderctrl.end()
 			print ('Download completed: %s' % file)
 	elif int(header[2]) == 100:
-		if sliderctrl: print ('User Limit Exceeded: %s' % file)
+		print ('User Limit Exceeded: %s' % file)
 	else:
-		if sliderctrl: print 'Unknown Error: %d/%s' % (int(header[2]), ' '.join(header[3:]))
+		print ('Unknown Error: %d/%s' % (int(header[2]), ' '.join(header[3:])))
 
 
 if __name__ == '__main__':
@@ -253,12 +280,13 @@ if __name__ == '__main__':
 
 	if command == 'config':
 		try:
+			import getpass
 			if not os.access(sori_dir, os.F_OK): os.mkdir(sori_dir)
-			print "Shell ORiented Interface for Uzoo"
 			print "=" * 70
+			print "* Shell ORiented Interface for Uzoo"
 			print "* Visit http://sf.net/projects/soriuzoo for information."
 			print "* If you want to register new ID, type 'new' in ID."
-			print "-" * 70
+			print "=" * 70
 			username = raw_input('Soribada username : ')
 			if username == 'new':
 				username = raw_input('Enter new username: ')
@@ -283,34 +311,34 @@ if __name__ == '__main__':
 			print "=> Updating available hosts list."
 			hosts = update(username, password, port)
 			print "=> %d hosts are online." % len(hosts[1])
-			pickle.dump(hosts, open(hosts_file, 'w'))
-		except KeyboardInterrupt: print "\nUser interrupted."
+			dump(hosts, open(hosts_file, 'w'))
+		except KeyboardInterrupt: print "\nUser interrupt."
 
 	elif command in ['find', 'search']:
 		try:
 			if len(sys.argv) > 2:
 				if (os.access(hosts_file, os.F_OK) and
 						time.time() - os.stat(hosts_file)[-1] < 1800):
-					hosts = pickle.load(open(hosts_file, 'r'))
+					hosts = load(open(hosts_file, 'r'))
 				else:
 					print "=> Updating available hosts list."
 					hosts = update(username, password, port)
-					pickle.dump(hosts, open(hosts_file, 'w'))
+					dump(hosts, open(hosts_file, 'w'))
 				print "=> Searching in %s hosts." % len(hosts[1])
 				songs = search(hosts, sys.argv[2:], 10, sliderctrl=ConsoleSlider)
-				pickle.dump(songs, open(songs_file, 'w'))
+				dump(songs, open(songs_file, 'w'))
 				listsong(songs)
 			else: print "You need to sepecify PATTERN."
 		except IOError: pass
-		except KeyboardInterrupt: print "\nUser interrupted."
+		except KeyboardInterrupt: print "\nUser interrupt."
 
 	elif command == 'list':
 		if os.access(songs_file, os.F_OK):
 			try:
-				songs = pickle.load(open(songs_file, 'r'))
+				songs = load(open(songs_file, 'r'))
 				listsong(songs)
 			except IOError: pass
-			except KeyboardInterrupt: print "User interrupted."
+			except KeyboardInterrupt: print "User interrupt."
 		else: print "You need to run `sori find PATTERN' first."
 
 	elif command in ['show', 'get', 'bgget']:
@@ -322,7 +350,10 @@ if __name__ == '__main__':
 				if pid:
 					print ('New pid is %s.' % pid)
 					os._exit(0)
-			songs = pickle.load(open(songs_file, 'r'))
+					os.setpgrp()
+					os.umask(0)
+			try: songs = load(open(songs_file, 'r'))
+			except KeyboardInterrupt: print "\nUser interrupt."
 			for no in sys.argv[2:]:
 				try:
 					no = int(no) - 1
@@ -331,7 +362,9 @@ if __name__ == '__main__':
 						elif command == 'bgget': download(username, songs[no], None)
 						else: showsong(no, songs[no])
 					else: print "%s: Out of range." % (no + 1)
-				except KeyboardInterrupt: print "\nUser interrupted."
+				except KeyboardInterrupt:
+					status_edit(status_file, os.getpid())
+					print "\nUser interrupt."
 				except socket.error, why: print why[1]
 				except ValueError: print "Wrong NUMBER."
 		else: print "You need to sepecify NUMBER."
@@ -350,7 +383,7 @@ downloading mp3s from soribada community.
 Commands:
    config - Enter the username and password.
    update - Update available hosts list.
-   find   - Search mp3 and save the results.
+   find   - Search songs and save the results.
    search - Same with find.
    list   - List again search results.
    show   - Show information of selected song(s).
