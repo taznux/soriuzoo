@@ -172,14 +172,16 @@ class ConsoleSlider:
 		self.barfill = -1
 		self.max = max
 		self.barsize = 60 # fcntl?
+		self.st = time.time()
 		self.update(0)
 	
 	def update (self, value):
 		newfill = int( float(value) * self.barsize / self.max )
 		if newfill != self.barfill:
 			self.barfill = newfill
-			sys.stdout.write('\r[%s%s] %3d%%' % ('='*newfill,
-				' '*(self.barsize-newfill), newfill * 100 / self.barsize) )
+			sys.stdout.write('\r[%s%s] %3d%% %d kB/s' % ('='*newfill,
+				' '*(self.barsize-newfill), newfill * 100 / self.barsize,
+				value/(time.time()-self.st)/1024 ) )
 			sys.stdout.flush()
 	
 	def end (self):
