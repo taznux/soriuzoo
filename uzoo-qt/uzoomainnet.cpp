@@ -1,6 +1,7 @@
 #include "uzoomainnet.h"
 #include "uzooparser.h"
 #include "uzoosocket.h"
+
 #include <qobject.h>
 #include <qurloperator.h>
 #include <qlineedit.h>
@@ -13,28 +14,56 @@
 #include <qpixmap.h>
 #include <qtimer.h>
 #include <qtextbrowser.h>
+#include <qdir.h>
+#include <qlayout.h>
+#include <qlistview.h>
+#include <qcheckbox.h>
+#include <qregexp.h>
 
 #include <iostream.h>
+#include <stdlib.h>
+#undef DEBUG_UZOO
 #define kor(x) QString::fromLocal8Bit(x)
 
 UzooMainNet::UzooMainNet(QWidget *parent,const char*name=0,int fl=0)
 	: UzooMain(parent,name,fl)
 {
-	// 그림설정
+	message0Label->setText(kor("환경설정합시다"));
+	initStatusBar();
+	initKorean();
+	
+	// 파서를 생성한다.
+	parser = new UzooParser(this,"parser");
+	connect(parser, SIGNAL(sendClientMessage(RecvMessage &)),
+			this,   SLOT(slotAppendToSearchListView(RecvMessage &)));
+	connect(parser, SIGNAL(nowRecvSendUDPClients(int, int)),
+			this , SLOT(slotPrintLabel(int , int)));
+	connect(parser,SIGNAL(sendMessage(const QString& , int)),
+			messageStatus,SLOT(message(const QString& , int)));
+
+	// configure Window
+	genconfig = new UzooConfigImpl(this);
+	this->info = genconfig->getInfo();
+	genconfig->hide();
+	connect(genconfig,SIGNAL(sendInfo(const UzooEnviroment&)) ,
+		this, SLOT(slotEnviroment(const UzooEnviroment&)));
+	
+	// ID와 비번을 기입
+	idLineEdit->setText(kor( info.userid ));
+	passwdLineEdit->setText(kor( info.passwd));
+
+	// 리스트 박스에 들어갈 색
 	downloadPixmap = new QPixmap(30,30);
 	userlimitPixmap = new QPixmap(30,30);
 	filenotPixmap = new QPixmap(30,30);
 	invalidPixmap = new QPixmap(30,30);
-	
 	downloadPixmap->fill(QColor(59,144,255));
 	userlimitPixmap->fill(QColor(222,255,101));
 	filenotPixmap->fill(QColor(255,140,82));
 	invalidPixmap->fill(QColor(255,77,12));
-
 	
 	resultSearchList = new QValueList<ResultSearch>;
-	parser = 0;
-	mainTabWidget->showPage(tab_6);
+	mainTabWidget->showPage(tab_4);
 	idLineEdit->setFocus();
 	connect(connectPBtn, SIGNAL(clicked()),this,SLOT(slotStartConnect()));
 	connect(searchPBtn , SIGNAL(clicked()),this,SLOT(slotSearch()));
@@ -45,33 +74,79 @@ UzooMainNet::UzooMainNet(QWidget *parent,const char*name=0,int fl=0)
 	connect(searchListBox,SIGNAL(highlighted(int)),this,
 		SLOT(slotSearchListBoxHighlighted(int)));
 
+	connect(configPBtn,SIGNAL(clicked()),this,SLOT(slotRunConfig())),
+	connect(appearanceConfigPBtn,SIGNAL(clicked()),
+		this, SLOT(slotRunAppearanceConfig()));
+
 	QTimer *updateLabelTimer = new QTimer(this);
 	connect(updateLabelTimer,SIGNAL(timeout()),
 		this, SLOT(slotUpdateClientInfo()));
-	updateLabelTimer->start(1000);
+	updateLabelTimer->start(100);
 
-	initHeloBrower();
+	if (info.autoLogin.lower() == QString("true"))
+	{
+		slotStartConnect();
+	}
 }
 UzooMainNet::~UzooMainNet()
 {
 }
 void
-UzooMainNet::initHeloBrower()
+UzooMainNet::initStatusBar()
 {
-	helpBrower->setText(kor(
-		"소리우주 개발자 리스트\n"
-		"Analysis/Design\n"
-		"장혜식 perky@users.sourceforge.net\n"
-		"Qt Developer\n"
-		"이재일 sonegy@users.sourceforge.net\n\n"
-		"도움을 주신분들\n"
-		"박진철 exman@users.sourceforge.net\n"
-		"남대현 imations@users.sourceforge.net\n"
-		"류윤   ruyon@users.sourceforge.net\n"
-		"류명환 ryu281@users.sourceforge.net\n"
-		"최진철 taznux@users.sourceforge.net\n"
-		"황장호 xrath@users.sourceforge.net\n"
-	));
+	messageStatus = new QStatusBar(this);
+	UzooMainLayout->addWidget(messageStatus);
+}
+void
+UzooMainNet::initKorean()
+{
+	this->setCaption(kor("소리우주(소리바다 for linux)"));
+	this->searchPBtn->setText(kor("찾기"));
+	this->stopPBtn->setText(kor("그만"));
+	this->searchTitle->setText(kor("노래제목"));
+	this->searchSinger->setText(kor("가수"));
+	this->searchQuality->setText(kor("음질"));
+	this->searchDownLoad->setText(kor("퍼센트"));
+	this->searchSize->setText(kor("크기"));
+	this->searchTime->setText(kor("시간"));
+	this->searchUser->setText(kor("사용자"));
+	this->mainTabWidget->changeTab(tab,kor("찾기"));
+
+	this->TextLabel5->setText(kor("내려받기"));
+	this->downloadListView->setColumnText(0,kor("파일이름"));
+	this->downloadListView->setColumnText(1,kor("제목"));
+	this->downloadListView->setColumnText(2,kor("가수"));
+	this->downloadListView->setColumnText(3,kor("크기"));
+	this->downloadListView->setColumnText(4,kor("음질"));
+	this->downloadListView->setColumnText(5,kor("시간"));
+	this->downloadListView->setColumnText(6,kor("사용자"));
+	this->downloadListView->setColumnText(7,kor("속도"));
+	this->TextLabel6->setText(kor("올려주기"));
+	this->uploadListView->setColumnText(0,kor("파일이름"));
+	this->uploadListView->setColumnText(1,kor("제목"));
+	this->uploadListView->setColumnText(2,kor("가수"));
+	this->uploadListView->setColumnText(3,kor("크기"));
+	this->uploadListView->setColumnText(4,kor("음질"));
+	this->uploadListView->setColumnText(5,kor("시간"));
+	this->uploadListView->setColumnText(6,kor("사용자"));
+	this->uploadListView->setColumnText(7,kor("속도"));
+	this->mainTabWidget->changeTab(tab_2,kor("상태"));
+	
+	this->configPBtn->setText(kor("일반설정(&C)"));
+	this->appearanceConfigPBtn->setText(kor("외형설정(&A)"));
+	this->mainTabWidget->changeTab(tab_3,kor("설정"));
+
+	this->TextLabel1->setText(kor("사용자ID"));
+	this->TextLabel2_2->setText(kor("패스워드"));
+	this->connectPBtn->setText(kor("접속"));
+	this->mainTabWidget->changeTab(tab_4,kor("접속"));
+	
+}
+
+void
+UzooMainNet::slotEnviroment(const UzooEnviroment& info)
+{
+	this->info = info;
 }
 void
 UzooMainNet::slotStartConnect()
@@ -82,9 +157,8 @@ UzooMainNet::slotStartConnect()
 		printLabel->setText("please input correct info");
 		return;
 	}
-	_UserID = idLineEdit->text().local8Bit();
-	_Passwd = passwdLineEdit->text().local8Bit();
-	_Version= versionLineEdit->text().local8Bit();
+	info.userid = idLineEdit->text();
+	info.passwd = passwdLineEdit->text();
 	
 	//게이트웨이를 얻어온다.
 	QUrlOperator *gate = new QUrlOperator(
@@ -105,11 +179,11 @@ UzooMainNet::slotGetGateWay(const QByteArray& byte)
     targetStr = str.mid( startIndex , endIndex - startIndex+6);
 
     targetStr.append("?username=");
-    targetStr.append(_UserID);
+    targetStr.append(kor(info.userid));
     targetStr.append("&password=");
-    targetStr.append(_Passwd);
+    targetStr.append(kor(info.passwd));
     targetStr.append("&version=");
-    targetStr.append(_Version);
+    targetStr.append(kor(info.version));
 
     QUrlOperator *asrlogin = new QUrlOperator( targetStr );
     connect( asrlogin , SIGNAL(data(const QByteArray&,QNetworkOperation*)) ,
@@ -141,28 +215,32 @@ UzooMainNet::slotGetServerInfo(const QByteArray &byte)
     _Myip = _Myip.stripWhiteSpace();
 
 	_ASRUrl.append("?action=gimme&username=");
-	_ASRUrl.append(_UserID);
+	_ASRUrl.append(kor(info.userid));
 	_ASRUrl.append("&password=");
-	_ASRUrl.append(_Passwd);
+	_ASRUrl.append(kor(info.passwd));
 
 	printLabel->setText("Succed to connect");
 	mainTabWidget->showPage(tab );
 	searchLineEdit->setFocus();
+	searchPBtn->setEnabled(true);
+	stopPBtn->setEnabled(true);
 }
 void
 UzooMainNet::slotSearch()
 {
+	if (searchLineEdit->text().isEmpty() )
+	{
+		messageStatus->message("Please input string",2000);
+		return;
+	}
+	messageStatus->message("Start ASR Parser",2000);
 	resultSearchList->clear();
 	searchListBox->clear();
-	if(parser !=0 ) {delete parser; parser=0;}
-	UzooParser *_parser = new UzooParser( _ASRUrl , _Myip ,  searchLineEdit->text());
-	parser = _parser;
-	connect(_parser, SIGNAL(sendClientMessage(RecvMessage &)),
-			this,   SLOT(slotAppendToSearchListView(RecvMessage &)));
-	connect(_parser, SIGNAL(nowSendUDPClients(int)),
-			progLCD,SLOT(display(int)));
-	connect(_parser, SIGNAL(nowRecvUDPClients(int)),
-			this , SLOT(slotPrintLabe1(int)));
+
+	// 파서를 시작한다.
+	parser->setMyPort( info.userPort );
+	parser->setRecvMaxNum( info.biggestSearch );
+	parser->startParser( _ASRUrl , _Myip , searchLineEdit->text());
 }
 void
 UzooMainNet::slotSearchStop()
@@ -261,6 +339,7 @@ UzooMainNet::slotAppendToSearchListView(RecvMessage &message)
 		appendResult.title   = result.title;
 		appendResult.comment = result.comment;
 		appendResult.downsize= 0;
+		appendResult.state 	 = 0;
 
 		resultSearchList->append( appendResult );// 저장고에 저장한다.
 			
@@ -282,34 +361,37 @@ UzooMainNet::slotAppendToSearchListView(RecvMessage &message)
 	}
 }
 void 
-UzooMainNet::slotPrintLabe1(int num)
+UzooMainNet::slotPrintLabel(int num , int num2)
 {
-	int total = parser->getClientsInfoSize();
+//	int total = parser->getClientsInfoSize();
 	message1Label->setText( 
-		QString::number(num)+ " / " + QString::number(total));
+		QString::number(num)+ " / " + QString::number(num2));
 }
 void
 UzooMainNet::slotSearchListBoxSelected(int num)
 {
 	//cout << "Num:"<< num << endl;
-	QString *address_p 	= & (*resultSearchList)[num].address ;
-	int 	port 		=  (*resultSearchList)[num].port;
-	QString *path_p		= & (*resultSearchList)[num].path;
-	long	filesize	=  (*resultSearchList)[num].filesize;
+	//QString *address_p 	= & (*resultSearchList)[num].address ;
+	//int 	port 		=  (*resultSearchList)[num].port;
+	//QString *path_p		= & (*resultSearchList)[num].path;
+	//long	filesize	=  (*resultSearchList)[num].filesize;
 
 	//cout << "Address:"<< address_p->latin1() << endl;
 	//cout << "port   :"<< port << endl;
 	//cout << "paht   :"<< path_p->latin1() << endl;
 	
-	UzooSocket *download = new UzooSocket(*path_p , _UserID , this,"download");
+	UzooSocket *download = new UzooSocket(this,"download" , 
+			(*resultSearchList)[num] , num , info.userid );
+	download->setDownLoadPath( info.downloadPath );
+
 	connect(download , SIGNAL(sendFileSize(int,int)),
 		this , SLOT(slotSetDownLoadSize(int,int)));
-	connect(download,SIGNAL(sendMessage(const QString&)),
-		message2Label , SLOT(setText(const QString&)));
-	download->setTotalFileSize(filesize);
-	download->setListIndex( num );
-	download->connectTo( *address_p , port);
-
+	connect(download , SIGNAL(sendState(int,char)),
+		this , SLOT(slotSetSocketState(int,char)));
+	connect(download , SIGNAL(start(UzooSocket*)),
+		this , SLOT(slotStartDownLoad(UzooSocket*)));
+	connect(download , SIGNAL(end(UzooSocket*)),
+		this , SLOT(slotEndDownLoad(UzooSocket*)));
 	// 현재 리스트줄을 색을 넣는다. 다운로드임을 표시한다.
 }
 void
@@ -328,7 +410,6 @@ UzooMainNet::slotSearchListBoxHighlighted(int num)
 	searchQuality->setText( kor((*resultSearchList)[num].bitrate ));
 
 	// 오른쪽 밑 라벨을 지운다.
-	message2Label->setText("");
 	searchDownLoad->setText("");
 }
 void
@@ -338,21 +419,87 @@ UzooMainNet::slotSetDownLoadSize(int index , int num)
 	// index와 현재 하이라이트된 일치한다면 size라벨을 업데이트한다.
 }
 void
+UzooMainNet::slotSetSocketState(int index , char state)
+{
+	(*resultSearchList)[index].state = state;
+}
+void
 UzooMainNet::slotUpdateClientInfo()
 {
-	//현재 하이라이트된 인덱스의 downsize가 0이 아니며
-	//filesize와 같지 않다면 다운중인 파일임을 알수 있다.
 	int currentListIndex = searchListBox->currentItem();
 	if (currentListIndex < 0 ) return;
+
 	int downsize = (*resultSearchList)[currentListIndex].downsize;
 	int filesize = (*resultSearchList)[currentListIndex].filesize;
 	int count = (int)(((double)downsize/filesize)*100);
-	if ( downsize !=0 )
+	// 현재 listbox의 인덱스를 이용해서 label을 업데이트
+	searchSize->setText(
+		QString::number(downsize)+" / "+QString::number(filesize));
+	searchDownLoad->setText(QString::number( count)+"%" );
+
+	int state = (*resultSearchList)[currentListIndex].state;
+	if ( state == 0)
+		messageStatus->message("Please download me!",2000);
+	else if(state ==1)
+		messageStatus->message("Start download" , 2000);
+	else if(state ==2)
+		messageStatus->message("Downloading" , 2000);
+	else if(state ==3)
+		messageStatus->message("Finished download" , 2000);
+	else if(state ==4)
+		messageStatus->message("Wating", 2000);
+	else if(state ==5)
+		messageStatus->message("Error",2000);
+	else if(state ==6)
+		messageStatus->message("User Limit",2000);
+	else if(state ==7)
+		messageStatus->message("File Not Found",2000);
+	else if(state ==8)
+		messageStatus->message("Invaild Command",2000);
+	else if(state ==9)
+		messageStatus->message("File Exist",2000);
+	else if(state ==10)
+		messageStatus->message("Connection Closed",2000);
+	else if(state ==11)
+		messageStatus->message("Delayed Close Finished",2000);
+}
+void
+UzooMainNet::slotRunConfig()
+{
+	genconfig->show();
+}
+void
+UzooMainNet::slotRunAppearanceConfig()
+{
+}
+void
+UzooMainNet::slotStartDownLoad(UzooSocket *downloader)
+{
+	QString downloadFileName(downloader->getDownLoadFileName());
+	downloadFileName.prepend("\\");
+	downloadFileName.replace( QRegExp(" ") , "\\ ");
+#ifdef DEBUG_UZOO
+	cout << "Start Download\n";
+#endif
+	if ( info.playerEnable.lower() == "true")
 	{
-		// 현재 listbox의 인덱스를 이용해서 label을 업데이트
-		searchSize->setText(
-			QString::number(downsize)+" / "+QString::number(filesize));
-		searchDownLoad->setText(QString::number( count)+"%" );
-		message2Label->setText("DownLoading");
+		this->mp3player = info.defaultPlayerPath +" "+ downloadFileName + "&";
+		QTimer::singleShot(
+			info.playerStartTime*1000 , this , SLOT(slotRunMP3Player()));
 	}
+}
+void
+UzooMainNet::slotRunMP3Player()
+{
+#ifdef DEBUG_UZOO
+	cout << mp3player.local8Bit().data() << "\n";
+#endif
+	system( mp3player.local8Bit().data() );
+}
+void
+UzooMainNet::slotEndDownLoad(UzooSocket *downloader)
+{
+#ifdef DEBUG_UZOO
+	cout << "End DownLoad\n";
+#endif
 }

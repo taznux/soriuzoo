@@ -5,6 +5,7 @@
 #include <qnetworkprotocol.h>
 #include <qstring.h>
 #include <qtimer.h>
+#include <qregexp.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -12,23 +13,21 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+//#undef DEBUG_UZOO
 /****************************************************************************
  * Constructor and destructor and init Function, and private function
  ***************************************************************************/
-UzooParser::UzooParser(	const QString &asrurl, const QString &myip ,
-		const QString &searchstring)
-	: QObject(0,0)
+UzooParser::UzooParser(QObject *parent , const char*name)
+	: QObject(parent,name)
 {
 	initLookUpTable();
-	initAsrUrl(asrurl);
-	initSearchString(searchstring); // 이게 먼저 와야 한다.
-	initMyIP(myip);					// 이거 보다.
-
 	clientsInfo = new QArray<AsrArray>(7500);
-	clientsInfoIndex = 0;
-	sendCounter = 0;
-	recvCounter = 0;
 	recvMaxNum = 500;
+	myPort = 9001;
+
+//	/* Timer를 호출하여 시간간격을 두고 클라이언트들에게 메세지를 보낸다.*/
+	timer = new QTimer(this);
+	connect (timer, SIGNAL(timeout()), this, SLOT(slotSendMessageToClients()));
 
 	sockfd = ::socket(AF_INET ,SOCK_DGRAM , 0);
 	socketDevice = new QSocketDevice(sockfd,QSocketDevice::Datagram);
@@ -39,7 +38,19 @@ UzooParser::UzooParser(	const QString &asrurl, const QString &myip ,
 UzooParser::~UzooParser()
 {
 	close(sockfd);
-	cout << "Destroctor!!\n";
+}
+void
+UzooParser::startParser(const QString &asrurl , const QString &myip , 
+	const QString &searchstring)
+{
+	clientsInfoIndex = 0;
+	sendCounter = 0;
+	recvCounter = 0;
+
+	emit sendMessage("Start Parser",2000);
+	initAsrUrl(asrurl);
+	initSearchString(searchstring); // 이게 먼저 와야 한다.
+	initMyIP(myip);					// 이거 보다.
 }
 void
 UzooParser::initAsrUrl(const QString &asrurl)
@@ -50,8 +61,6 @@ UzooParser::initAsrUrl(const QString &asrurl)
 	connect( asr , SIGNAL( finished(QNetworkOperation*)),
 		this , SLOT(slotFinished()));
 	asr->get();
-
-	//cout << "START initAsrUrl \n";
 }
 void
 UzooParser::initMyIP(const QString &myip)
@@ -64,7 +73,7 @@ UzooParser::initMyIP(const QString &myip)
 	uchar ip4;
 	
 		/* 헉~ 단방에 인코딩을~ */
-	transrate_encoding(9001, myip , b1 ,b2 , ip1, ip2, ip3, ip4);
+	transrate_encoding(myPort, myip , b1 ,b2 , ip1, ip2, ip3, ip4);
 
 	/* message에 자신의 주소를 적어준다. 물론 encoding이 필요하지*/
 	message.send_data[0] = 0x01;
@@ -86,7 +95,6 @@ UzooParser::initSearchString(const QString &searchstring_)
 	searchString.append( searchstring_.local8Bit().simplifyWhiteSpace() );
 	searchString.replace( QRegExp(" ") , "\n+" );
 	searchString.append("\n");
-	cout << "SEARCHSTRING : " << searchString.latin1() << endl;
 
 	/* 보낼 전체 길이를 정할수 있다. */
 	message.send_data = new uchar[11 + searchString.length() ];
@@ -98,17 +106,38 @@ UzooParser::initSearchString(const QString &searchstring_)
 void
 UzooParser::initLookUpTable()
 {
-	for(int i=0 ; i <= 255 ; i++)
+/*	for(int i=0 ; i <= 255 ; i++)
 	{
         for(int k=0 ; k <= 255 ; k++)
         {
             if ( (k^1 + 164)%256 == i)
             {
                 lookUpTable[i] = k;
+				cout << k << "," ;
                 break;
             }
         }
-    }
+    }*/
+	uchar lookUpTable_copy[] = {
+		165,164,167,166,161,160,163,162,173,172,175,174,169,168,171,170,
+		181,180,183,182,177,176,179,178,189,188,191,190,185,184,187,186,
+		133,132,135,134,129,128,131,130,141,140,143,142,137,136,139,138,
+		149,148,151,150,145,144,147,146,157,156,159,158,153,152,155,154,
+		229,228,231,230,225,224,227,226,237,236,239,238,233,232,235,234,
+		245,244,247,246,241,240,243,242,253,252,255,254,249,248,251,250,
+		197,196,199,198,193,192,195,194,205,204,207,206,201,200,203,202,
+		213,212,215,214,209,208,211,210,221,220,223,222,217,216,219,218,
+		37,36,39,38,33,32,35,34,45,44,47,46,41,40,43,42,53,52,55,54,49,
+		48,51,50,61,60,63,62,57,56,59,58,5,4,7,6,1,0,3,2,13,12,15,14,9,
+		8,11,10,21,20,23,22,17,16,19,18,29,28,31,30,25,24,27,26,101,100,
+		103,102,97,96,99,98,109,108,111,110,105,104,107,106,117,116,119,
+		118,113,112,115,114,125,124,127,126,121,120,123,122,69,68,71,70,
+		65,64,67,66,77,76,79,78,73,72,75,74,85,84,87,86,81,80,83,82,93,
+		92,95,94,89,88,91,90 };
+	for(int i=0 ; i < 256 ; i++)
+	{
+		lookUpTable[i] = lookUpTable_copy[i];
+	}
 }
 uchar
 UzooParser::decoding(int magic , uchar data)
@@ -134,9 +163,7 @@ UzooParser::decoding(int magic , uchar data)
 void
 UzooParser::send()
 {
-//	/* Timer를 호출하여 시간간격을 두고 클라이언트들에게 메세지를 보낸다.*/
-	timer = new QTimer(this);
-	connect (timer, SIGNAL(timeout()), this, SLOT(slotSendMessageToClients()));
+	timer->stop();
 	timer->start(1, false); // 0.001초 간격으로 계속 호출한다.
 }
 /* 메세지를 받으면 당연히 분석을 해야지 */
@@ -149,8 +176,6 @@ UzooParser::transrate_decoding(uchar b1 , uchar b2 , uchar ip1, uchar ip2,
 	uchar magic   = (b2&12)>>2;   /* 00001100 = 12  */
 	uchar undecode= (b2&240)>>4;  /* 11110000 = 240 */
 
-	//cout << "transrate_decoding : " << endl;
-	
 	/* 1000 = 8
 	 * 0100 = 4
 	 * 0010 = 2
@@ -173,27 +198,23 @@ UzooParser::transrate_decoding(uchar b1 , uchar b2 , uchar ip1, uchar ip2,
 	{
 		ip1 = decoding(magic , ip1 );
 	}
-	//cout << (int) ip1 << " " <<(int)ip2<<" "<<(int)ip3<<" "<<(int)ip4<<endl;
 	
 	/* ip배열을 재정리 한다. */
 	_ip1 = ip2;
 	_ip2 = ip4;
 	_ip3 = ip3;
 	_ip4 = ip1;
-	//cout << "End decoding\n";
 }
 /* 메세지를 보낼라면 당연히 암호화 시켜야지 */
 void
 UzooParser::transrate_encoding(int port , QString address ,
 	uchar &b1, uchar &b2, uchar &ip1, uchar &ip2 ,uchar &ip3 ,uchar &ip4)
 {
-	//cout << "Start encoding \n";
 	// b2는 당연히 4이고, 포트는 왠만해서.....9255를 넘지 않으면 좋겠다.
 	b1 = ( (port-9000)&255); 		// 255 = 11111111
 	b2 = ( (port-9000)&768 )>>8;
 	b2 = b2+ 4;	// 768 = 1100000000 , 4 = 00000100
     address.append(".");
-	//cout << "Encode Address:" << address.latin1() << endl;
 
 	int fIndex = 0;
     uchar tempMyIP[4];
@@ -233,7 +254,7 @@ UzooParser::slotRecvAsrProtocolMessage(const QByteArray &byte)
 	int byteLen = byte.size();
 	QArray<uchar> byteUchar( byteLen );
 	// 만약 처음의 필요없는 바이트는 제외시킨다.
-	QString except("Version : 1.0");
+/*	QString except("Version : 1.0");
 	int 	exceptLen = except.length();
 	if ( QString( byte.data()).left(exceptLen) == except )
 	{
@@ -245,12 +266,12 @@ UzooParser::slotRecvAsrProtocolMessage(const QByteArray &byte)
 		}
 	}
 	else
-	{
+	{*/
 		for(int i=0 ; i <(int)byteLen ; i++)
 		{
 			byteUchar[i] = (uchar)byte[i];
 		}
-	}
+/*	}*/
 	/* 이제부터 byteUchar 배열을 사용하고, 이제 저장고에 저장한다.*/
 	/* 처음 시작 바이트를 찾는다. 1을 6바이트 간격으로 있을때 그전 6바이트
 	 * 씩 검색하여 처음 부분을 찾는다. */
@@ -260,8 +281,8 @@ UzooParser::slotRecvAsrProtocolMessage(const QByteArray &byte)
 	while(1)
 	{
 		if (byteUchar[i]   == 0x01 && 
-			byteUchar[i+6] == 0x01 &&
-			byteUchar[i+12]== 0x01)
+			byteUchar[i+6] == 0x01)// &&
+	//		byteUchar[i+12]== 0x01)
 		{
 			guessIndex = i;
 			break;
@@ -273,7 +294,7 @@ UzooParser::slotRecvAsrProtocolMessage(const QByteArray &byte)
 	/* 그리고 대상이 되는 바이트는 byteUchar 이다 */
 	for(int i= firstIndex ; i < (int)byteUchar.size() ;/**/ )
 	{
-		if ( i+6 > (int)byteUchar.size() ) break;
+		if (i+5 >= (int) byteUchar.size() ) break;
 		uchar b1 = (uchar)byteUchar[i+0];
 		uchar b2 = (uchar)byteUchar[i+1];
 		uchar ip1= (uchar)byteUchar[i+2];
@@ -293,13 +314,13 @@ UzooParser::slotRecvAsrProtocolMessage(const QByteArray &byte)
 		clientsInfoIndex++;// 저장 갯수가 된다!
 		i = i+6;
 	}
+	emit sendMessage("Recv Clients Ip" , 2000);
 }
 void
 UzooParser::slotFinished()
 {
-	clientsInfo->resize( clientsInfoIndex );
+	//clientsInfo->resize( clientsInfoIndex  );
 	clientsInfoIndex = 0;
-	cout << "END ASRPARSER\n";
 	emit endAsrParser();
 
 	// 검색을 시작한다.
@@ -308,11 +329,9 @@ UzooParser::slotFinished()
 void
 UzooParser::slotSendMessageToClients()
 {
-	//cout << "Send MEssage\n";
-	if ( sendCounter >= (int)clientsInfo->size() -1 )
+	if ( sendCounter >= (int)clientsInfo->size()  )
 	{
 		//타이머를 종료하고, 카운더도 초기화시킨다.
-		cout << "Send Function timer stop : " << sendCounter << endl;
 		timer->stop();
 		return;
 	}
@@ -324,6 +343,9 @@ UzooParser::slotSendMessageToClients()
 		clientsInfo->at(sendCounter).ip2,
 		clientsInfo->at(sendCounter).ip3,
 		clientsInfo->at(sendCounter).ip4);
+#ifdef DEBUG_UZOO
+	cout << "Client Ip:" <<address.latin1() << endl;
+#endif
 	QHostAddress theirAddress;
 	theirAddress.setAddress( address);
 	
@@ -331,17 +353,15 @@ UzooParser::slotSendMessageToClients()
 		(char*)message.send_data , (uint)message.send_len ,
 		theirAddress , clientsInfo->at(sendCounter).port );
 
-	emit nowSendUDPClients( sendCounter);
+	emit nowRecvSendUDPClients(recvCounter ,  sendCounter);
 	sendCounter++;
 }
 void
 UzooParser::slotRecvMessageFromClients()
 {
-	//cout << "Start Receving!! DATA\n";
 	if ( recvCounter == recvMaxNum ) {
 		// timer를 중지한다.
 		timer->stop();
-		cout << "Stop :" << recvCounter << endl;
 	}
 	int MAXLEN = 10000;
 	uchar string[MAXLEN];
@@ -367,8 +387,14 @@ UzooParser::slotRecvMessageFromClients()
 	address.sprintf("%d.%d.%d.%d", _ip1 , _ip2 , _ip3 , _ip4);
 	rmessage.address = address;
 	rmessage.message = QString( (char*) &string[11] );
-
+#ifdef DEBUG_UZOO
+	cout << "START###########################################\n";
+	cout << "RecvMessage address:" << rmessage.address.latin1() << endl;
+	cout << "RecvMessage message:" << rmessage.message.latin1() << endl;
+	cout << "END#############################################\n";
+#endif
 	recvCounter++;
 	emit sendClientMessage( rmessage );
-	emit nowRecvUDPClients( recvCounter);
+	emit sendMessage("Recv Client Message" ,2000);
+	emit nowRecvSendUDPClients( recvCounter ,  sendCounter);
 }
