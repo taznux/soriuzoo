@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE KDevPrjSession ><KDevPrjSession>
+ <Mainframe MaximizeMode="0" />
+ <DocsAndViews NumberOfDocuments="2" >
+  <Doc0 CursorPosLine="64" Type="KWriteDoc" NumberOfViews="1" CursorPosCol="0" FileName="/home/sonegy/Project/uzoo-qt/src/uzoomainnet.h" >
+   <View0 Top="0" Width="779" Attach="0" Height="417" Left="0" Focus="0" Type="KWriteView" MinMaxMode="0" />
+  </Doc0>
+  <Doc1 CursorPosLine="407" Type="KWriteDoc" NumberOfViews="1" CursorPosCol="27" FileName="/home/sonegy/Project/uzoo-qt/src/uzoomainnet.cpp" >
+   <View0 Top="0" Width="779" Attach="0" Height="417" Left="0" Focus="1" Type="KWriteView" MinMaxMode="0" />
+  </Doc1>
+ </DocsAndViews>
+</KDevPrjSession>
